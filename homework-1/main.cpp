@@ -48,7 +48,7 @@ void readOff(std::string const& filename, std::vector<Point>* points, std::vecto
 
     if (offile.is_open()){
         if(!(offile >> line_fileformat)){
-            std::cerr << "Unable to open file"; 
+            polyscope::warning("Unable to read file."); 
         }
         if(line_fileformat == "OFF"){
             offile >> vertices >> faces >> normals_amt;
@@ -57,6 +57,7 @@ void readOff(std::string const& filename, std::vector<Point>* points, std::vecto
                 points->push_back(Point{x,y,z});
             }
         }
+        else polyscope::warning("This only works for OFF files."); 
     offile.close();
   }
 
