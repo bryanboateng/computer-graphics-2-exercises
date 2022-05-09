@@ -16,6 +16,7 @@
 #include <utility>
 #include <vector>
 #include <fstream>
+#include <stdlib.h>
 
 #include "args/args.hxx"
 #include "portable-file-dialogs.h"
@@ -27,6 +28,8 @@ using Point = std::array<float, 3>;
 using Normal = std::array<float, 3>;
 
 using PointList = std::vector<Point>;
+int nPts = 0;
+float radius = 0.0314;
 
 /**
  * Teach polyscope how to handle our datatype
@@ -77,7 +80,7 @@ struct EuclideanDistance
 };
 
 /*
- * This is not yet a spatial data structure :)
+ * This is a KD tree
  */
 class SpatialDataStructure
 {
@@ -85,6 +88,7 @@ public:
     SpatialDataStructure(PointList const& points)
         : m_points(points)
     {
+
     }
 
     virtual ~SpatialDataStructure() = default;
@@ -94,17 +98,17 @@ public:
         return m_points;
     }
 
-    virtual std::vector<std::size_t> collectInRadius(const Point& p, float radius) const
+    virtual std::vector<Point> collectInRadius(const Point& p, float radius) const
     {
-        std::vector<std::size_t> result;
+        std::vector<Point> result;
 
         // Dummy brute-force implementation
         // TODO: Use spatial data structure for sub-linear search
-        for (std::size_t i = 0; i < m_points.size(); ++i)
+        for (size_t i = 0; i < m_points.size(); ++i)
         {
             float distance = EuclideanDistance::measure(p, m_points[i]);
             if (distance <= radius)
-                result.push_back(i);
+                result.push_back(m_points[i]);
         }
 
         return result;
@@ -133,6 +137,7 @@ polyscope::PointCloud* pc = nullptr;
 std::unique_ptr<SpatialDataStructure> sds;
 
 void callback() {
+
     if (ImGui::Button("Load Off file")) {
         auto paths = pfd::open_file("Load Off", "", std::vector<std::string>{ "point data (*.off)", "*.off" }, pfd::opt::none).result();
         if (!paths.empty())
@@ -150,11 +155,19 @@ void callback() {
 
                 // Build spatial data structure
                 sds = std::make_unique<SpatialDataStructure>(points);
+                PointList storedPoints = sds->getPoints();
             }
         }
     }
 
-    // TODO: Implement radius search
+
+    ImGui::InputInt("Point Number", &nPts);             // set a int variable
+    ImGui::InputFloat("radius", &radius);
+    if (ImGui::Button("Collect in Radius")){
+        PointList storedPoints = sds->getPoints();
+        std::vector<Point> radiusPoints =  sds->collectInRadius(storedPoints[nPts], radius);
+        polyscope::PointCloud* rpc = polyscope::registerPointCloud("Points in Radius", radiusPoints);
+    }   
     // TODO: Implement visualizations
 }
 
