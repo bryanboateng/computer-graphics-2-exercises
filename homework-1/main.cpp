@@ -15,6 +15,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <fstream>
 
 #include "args/args.hxx"
 #include "portable-file-dialogs.h"
@@ -39,20 +40,28 @@ void readOff(std::string const& filename, std::vector<Point>* points, std::vecto
 {
     points->clear();
     if (normals) normals->clear();
+    std::string line_fileformat;
+    int vertices, faces, normals_amt;
+    float x, y, z;
 
-    // Generate a random point cloud
-    // TODO: Replace with proper *.off reader
-    std::default_random_engine engine(std::random_device{}());
-    std::uniform_real_distribution<float> distribution(-1.f, 1.f);
-    for (unsigned int i = 0; i < 100; ++i)
-    {
-        points->push_back(Point{
-            distribution(engine),
-            distribution(engine),
-            distribution(engine)
-        });
-    }
-    polyscope::warning("Reading *.off files ist not implemented. Generated a dummy point cloud.");
+    std::ifstream offile(filename);
+
+    if (offile.is_open()){
+        if(!(offile >> line_fileformat)){
+            std::cerr << "Unable to open file"; 
+        }
+        if(line_fileformat == "OFF"){
+            offile >> vertices >> faces >> normals_amt;
+            for(int i = 0; i < vertices; ++i){
+                offile >> x >> y >> z;
+                points->push_back(Point{x,y,z});
+            }
+        }
+    offile.close();
+  }
+
+  else polyscope::warning("Unable to read file."); 
+    
 }
 
 struct EuclideanDistance
@@ -123,7 +132,7 @@ polyscope::PointCloud* pc = nullptr;
 std::unique_ptr<SpatialDataStructure> sds;
 
 void callback() {
-    if (ImGui::Button("Load Off")) {
+    if (ImGui::Button("Load Off file")) {
         auto paths = pfd::open_file("Load Off", "", std::vector<std::string>{ "point data (*.off)", "*.off" }, pfd::opt::none).result();
         if (!paths.empty())
         {
@@ -155,12 +164,12 @@ int main(int argc, char** argv) {
   // Parse args
   try {
     parser.ParseCLI(argc, argv);
+
   } catch (const args::Help&) {
     std::cout << parser;
     return 0;
   } catch (const args::ParseError& e) {
     std::cerr << e.what() << std::endl;
-
     std::cerr << parser;
     return 1;
   }
@@ -168,7 +177,6 @@ int main(int argc, char** argv) {
   // Options
   polyscope::options::groundPlaneMode = polyscope::GroundPlaneMode::ShadowOnly;
   polyscope::options::shadowBlurIters = 6;
-
   // Initialize polyscope
   polyscope::init();
 
