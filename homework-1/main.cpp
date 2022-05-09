@@ -16,12 +16,15 @@
 #include <utility>
 #include <vector>
 #include <fstream>
+#include <algorithm>
 
 #include "args/args.hxx"
 #include "portable-file-dialogs.h"
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include "glm/gtx/string_cast.hpp"
+
+#include "kd_tree.cpp"
 
 using Point = std::array<float, 3>;
 using Normal = std::array<float, 3>;
@@ -61,6 +64,8 @@ void readOff(std::string const& filename, std::vector<Point>* points, std::vecto
   }
 
   else polyscope::warning("Unable to read file."); 
+
+  kd_tree *tree = new kd_tree(points);
     
 }
 
@@ -187,4 +192,18 @@ int main(int argc, char** argv) {
   polyscope::show();
 
   return 0;
+}
+
+int test_median_algorithm(){
+    //shuffle and run median algorithm
+    int LEN=10000;
+    std::vector<Point> points;
+    for(int i=0; i<LEN;i++){
+        points.push_back(Point{(float)i,0,0});
+    }
+    auto rng = std::default_random_engine {};
+    std::shuffle(std::begin(points), std::end(points), rng);
+    auto result = kd_tree::median_search(points,0,LEN/2,0);
+    std::cout << "median:" << result[0] << std::endl;
+    return 0;
 }
