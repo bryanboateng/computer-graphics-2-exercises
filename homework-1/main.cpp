@@ -2,6 +2,7 @@
 
 #include "polyscope/combining_hash_functions.h"
 #include "polyscope/messages.h"
+#include "polyscope/curve_network.h"
 
 #include "polyscope/file_helpers.h"
 #include "polyscope/point_cloud.h"
@@ -35,6 +36,22 @@ float radius = 0.0314;
 /**
  * Teach polyscope how to handle our datatype
  */
+
+class kd_tree_node{
+    public:
+    float median;
+    kd_tree_node *left;
+    kd_tree_node *right;
+    PointList bucket;
+    kd_tree_node(float p, kd_tree_node *l, kd_tree_node *r, PointList b){
+        median = p;
+        left = l;
+        right = r;
+        bucket = b;
+    }
+};
+
+
 float adaptorF_custom_accessVector3Value(const Point& v, unsigned int ind)
 {
     return v[ind];
@@ -86,14 +103,35 @@ struct EuclideanDistance
 class SpatialDataStructure
 {
 public:
+    kd_tree_node *root;
     SpatialDataStructure(PointList const& points)
         : m_points(points)
     {
-        int median = medianSearch();
+        root = build_tree_using_sort(m_points, 0);
 
+        float median = medianSearch(y);
+        PointList meshNodes;
+        meshNodes.push_back({0,median,0});
+        meshNodes.push_back({3,median,0});
+        meshNodes.push_back({0,median,0});
+        meshNodes.push_back({0,median,3});
+        polyscope::CurveNetwork* mesh =  polyscope::registerCurveNetworkLine("kd tree", meshNodes);
 
 
     }
+    kd_tree_node *build_tree_using_sort(PointList &pts, int depth){
+            if (pts.size() == 0){
+                return NULL;
+            }
+            std::sort(pts.begin(), pts.end(), [&](Point a, Point b) {
+                return a[depth%3] > b[depth%3];
+             });
+             PointList p;
+             kd_tree_node *root = new kd_tree_node(1.2, nullptr, nullptr,p);
+            
+            return root;
+
+        }
 
 
     virtual ~SpatialDataStructure() = default;
@@ -102,12 +140,15 @@ public:
     {
         return m_points;
     }
+    
+    enum axis {x=0, y=1, z=2};
 
-    int medianSearch() const
+
+    int medianSearch(axis ax) const
     {   
-        int median = 0;
+        float median = 0;
         std::vector<PointList> shortLists;
-        std::vector<
+        std::vector<float> medianList;
         for(size_t i=0; i<m_points.size(); i=i+5){
             if(m_points.begin() + i + 5 > m_points.end()){
                 shortLists.push_back(PointList(m_points.begin() + i, m_points.end()));
@@ -116,7 +157,16 @@ public:
                 shortLists.push_back(PointList(m_points.begin() + i, m_points.begin()+i+5));
             }
         }
-        
+        for(auto shortList : shortLists){
+            std::sort(shortList.begin(), shortList.end(),
+                       [ax](const Point& a, const Point& b) {
+                         return a[ax] < b[ax];});
+            int shortListLength = shortList.size();
+            medianList.push_back(shortList[shortListLength/2][ax]);
+        }
+        std::sort(medianList.begin(), medianList.end());
+        median = medianList[medianList.size()/2];
+        std::cout << median << std::endl;
         return median;
     }
 
@@ -155,6 +205,7 @@ public:
 private:
     PointList m_points;
 };
+
 
 // Application variables
 polyscope::PointCloud* pc = nullptr;
