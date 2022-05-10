@@ -18,6 +18,8 @@
 #include <vector>
 #include <fstream>
 #include <stdlib.h>
+#include <queue> 
+
 
 #include "args/args.hxx"
 #include "portable-file-dialogs.h"
@@ -29,9 +31,12 @@ using Point = std::array<float, 3>;
 using Normal = std::array<float, 3>;
 
 using PointList = std::vector<Point>;
-const int BUCKET_SIZE = 16;
+const int BUCKET_SIZE = 140;
 int nPts = 0;
+int k = 0;
 float radius = 0.0314;
+float max_x, max_y, max_z = -10000;
+float min_x, min_y, min_z = 10000;
 
 /**
  * Teach polyscope how to handle our datatype
@@ -43,11 +48,13 @@ class kd_tree_node{
     kd_tree_node *left;
     kd_tree_node *right;
     PointList bucket;
-    kd_tree_node(float p, kd_tree_node *l, kd_tree_node *r, PointList b){
+    int depth;
+    kd_tree_node(float p, kd_tree_node *l, kd_tree_node *r, PointList b, int d){
         median = p;
         left = l;
         right = r;
         bucket = b;
+        depth = d;
     }
 };
 
@@ -61,6 +68,12 @@ void readOff(std::string const& filename, std::vector<Point>* points, std::vecto
 {
     points->clear();
     if (normals) normals->clear();
+    max_x = -10000;
+    max_y = -10000;
+    max_z = -10000;
+    min_x = 10000;
+    min_y = 10000;
+    min_z = 10000;
 
     std::ifstream off_file(filename);
     if (off_file.is_open()) {
@@ -74,6 +87,13 @@ void readOff(std::string const& filename, std::vector<Point>* points, std::vecto
             for (int i = 0; i < vertex_count; ++i) {
                 float x, y, z;
                 off_file >> x >> y >> z;
+                if(x > max_x) max_x = x;
+                if(y > max_y) max_y = y;
+                if(z > max_z) max_z = z;
+                if(x < min_x) min_x = x;
+                if(y < min_y) min_y = y;
+                if(z < min_z) min_z = z;
+                
                 points->push_back(Point{x,y,z});
             }
             off_file.close();
@@ -85,6 +105,27 @@ void readOff(std::string const& filename, std::vector<Point>* points, std::vecto
         throw std::invalid_argument("Unable to read file.");
     }
 }
+
+void createHyperplane(int axis, float median, std::vector<float> mins, std::vector<float> maxs){
+
+        std::vector<std::array<int, 2>> edges{{0,1}, {1,2}, {2,3}, {3,0}};
+
+        if(axis == 0){
+             PointList meshNodes{Point{median,mins[1],mins[2]},Point{median,maxs[1],mins[2]},Point{median,maxs[1],maxs[2]},Point{median,mins[1],maxs[2]}};
+             polyscope::registerCurveNetwork("kd grid" + std::to_string(axis)+ "_"  + std::to_string(median), meshNodes, edges);
+        }
+        if(axis == 1){
+             PointList meshNodes{Point{mins[0],median,mins[2]},Point{maxs[0],median,mins[2]},Point{maxs[0],median,maxs[2]},Point{mins[0],median,maxs[2]}};
+             polyscope::registerCurveNetwork("kd grid" + std::to_string(axis)+ "_" + std::to_string(median), meshNodes, edges);
+        }
+        if(axis==2){
+            PointList meshNodes{Point{mins[0],mins[1],median},Point{maxs[0],mins[1],median},Point{maxs[0],maxs[1],median},Point{mins[0],maxs[1],median}};
+            polyscope::registerCurveNetwork("kd grid" + std::to_string(axis)+ "_" + std::to_string(median), meshNodes, edges);
+        }
+        
+
+}
+
 
 struct EuclideanDistance
 {
@@ -110,13 +151,6 @@ public:
         root = build_tree_using_sort(m_points, 0);
 
         float median = medianSearch(y);
-        PointList meshNodes;
-        meshNodes.push_back({0,median,0});
-        meshNodes.push_back({3,median,0});
-        meshNodes.push_back({0,median,0});
-        meshNodes.push_back({0,median,3});
-        polyscope::CurveNetwork* mesh =  polyscope::registerCurveNetworkLine("kd tree", meshNodes);
-
 
     }
     kd_tree_node* build_tree_using_sort(PointList &pts, int depth){
@@ -141,8 +175,8 @@ public:
              else{
                  bucket = pts;
              }
-             kd_tree_node *root = new kd_tree_node(median, leftChild, rightChild, bucket);
-            
+             float median_val = pts[median][depth%3];
+             kd_tree_node *root = new kd_tree_node(median_val, leftChild, rightChild, bucket, depth);
             return root;
 
         }
@@ -202,20 +236,38 @@ public:
     }
 
 
-    virtual std::vector<std::size_t> collectKNearest(const Point& p, unsigned int k) const
+    virtual std::vector<Point> collectKNearest(const Point& p, unsigned int k) const
     {
-        std::vector<std::size_t> result;
+        std::vector<Point> result;
 
         // Bogus knn implementation, giving you the first k points!
         // TODO: Use spatial data structure for sub-linear search
         for (std::size_t i = 0; (i < k) && (i < m_points.size()); ++i)
         {
-            result.push_back(i);
+            result.push_back(m_points[i]);
         }
 
         return result;
     }
 
+    void renderKDTree(kd_tree_node* node, std::vector<float> mins, std::vector<float> maxs) const
+    {   
+        int axis= node->depth%3;
+        std::cout << axis << std::endl;
+        createHyperplane(axis, node->median, mins, maxs);
+        if(node->left != nullptr){
+            std::vector<float >maxs_new = maxs;
+            maxs_new[axis] = node->median;
+            renderKDTree(node->left, mins, maxs_new);
+        }
+        if(node->right != nullptr){
+            std::vector<float> mins_new = mins;
+            mins_new[axis] = node->median;
+            renderKDTree(node->right, mins_new, maxs);
+        }
+        
+
+    }
 private:
     PointList m_points;
 };
@@ -224,6 +276,8 @@ private:
 // Application variables
 polyscope::PointCloud* pc = nullptr;
 std::unique_ptr<SpatialDataStructure> sds;
+
+
 
 void callback() {
 
@@ -258,12 +312,24 @@ void callback() {
 
     ImGui::InputInt("Point Number", &nPts);            
     ImGui::InputFloat("radius", &radius);
+    ImGui::InputInt("k", &k); 
     if (ImGui::Button("Collect in Radius")){
         PointList storedPoints = sds->getPoints();
         std::vector<Point> radiusPoints =  sds->collectInRadius(storedPoints[nPts], radius);
         polyscope::PointCloud* rpc = polyscope::registerPointCloud("Points in Radius", radiusPoints);
+    }
+    if (ImGui::Button("Collect K Nearest")){
+        PointList storedPoints = sds->getPoints();
+        std::vector<Point> radiusPoints =  sds->collectKNearest(storedPoints[nPts], k);
+        polyscope::PointCloud* rpc = polyscope::registerPointCloud("Points in Radius", radiusPoints);
     }   
-    // TODO: Implement visualizations
+    if (ImGui::Button("Render KD Tree")){
+        std::vector<float> maxs{max_x,max_y,max_z};
+        std::vector<float> mins{min_x,min_y,min_z};
+        sds->renderKDTree(sds->root,mins,maxs);
+        
+
+    }
 }
 
 int main(int argc, char** argv) {
