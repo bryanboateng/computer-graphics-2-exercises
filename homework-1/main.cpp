@@ -103,7 +103,7 @@ struct EuclideanDistance
 class SpatialDataStructure
 {
 public:
-    kd_tree_node *root;
+    kd_tree_node* root;
     SpatialDataStructure(PointList const& points)
         : m_points(points)
     {
@@ -119,15 +119,29 @@ public:
 
 
     }
-    kd_tree_node *build_tree_using_sort(PointList &pts, int depth){
+    kd_tree_node* build_tree_using_sort(PointList &pts, int depth){
             if (pts.size() == 0){
                 return NULL;
             }
             std::sort(pts.begin(), pts.end(), [&](Point a, Point b) {
                 return a[depth%3] > b[depth%3];
              });
-             PointList p;
-             kd_tree_node *root = new kd_tree_node(1.2, nullptr, nullptr,p);
+             int median = pts.size()/2;
+             kd_tree_node *leftChild = nullptr;
+             kd_tree_node *rightChild = nullptr;
+             PointList bucket;
+
+             if(pts.size() > BUCKET_SIZE){
+                PointList left,right;
+                left.assign(pts.begin(), pts.begin()+median);
+                right.assign(pts.begin() + median + 1, pts.end());
+                leftChild = build_tree_using_sort(left, depth+1);
+                rightChild = build_tree_using_sort(right, depth+1);
+             }
+             else{
+                 bucket = pts;
+             }
+             kd_tree_node *root = new kd_tree_node(median, leftChild, rightChild, bucket);
             
             return root;
 
