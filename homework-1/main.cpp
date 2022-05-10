@@ -61,29 +61,29 @@ void readOff(std::string const& filename, std::vector<Point>* points, std::vecto
 {
     points->clear();
     if (normals) normals->clear();
-    std::string line_fileformat;
-    int vertices, faces, normals_amt;
-    float x, y, z;
 
-    std::ifstream offile(filename);
-
-    if (offile.is_open()){
-        if(!(offile >> line_fileformat)){
-            polyscope::warning("Unable to read file."); 
-        }
-        if(line_fileformat == "OFF"){
-            offile >> vertices >> faces >> normals_amt;
-            for(int i = 0; i < vertices; ++i){
-                offile >> x >> y >> z;
+    std::ifstream off_file(filename);
+    if (off_file.is_open()) {
+        std::string header_keyword;
+        if(!(off_file >> header_keyword)){
+            off_file.close();
+            throw std::invalid_argument("Unable to read file.");
+        } else if (header_keyword == "OFF") {
+            int vertex_count, face_count, edge_count;
+            off_file >> vertex_count >> face_count >> edge_count;
+            for (int i = 0; i < vertex_count; ++i) {
+                float x, y, z;
+                off_file >> x >> y >> z;
                 points->push_back(Point{x,y,z});
             }
+            off_file.close();
+        } else {
+            off_file.close();
+            throw std::invalid_argument("Incorrect file format. This program only supports point data from OFF-files that contain the header keyword OFF. More about the specifications of OFF-Files can be found at: http://paulbourke.net/dataformats/oogl/#OFF");
         }
-        else polyscope::warning("This only works for OFF files."); 
-    offile.close();
-  }
-
-  else polyscope::warning("Unable to read file."); 
-    
+    } else {
+        throw std::invalid_argument("Unable to read file.");
+    }
 }
 
 struct EuclideanDistance
@@ -222,15 +222,21 @@ void callback() {
             if (path.extension() == ".off")
             {
                 // Read the point cloud
-                std::vector<Point> points;
-                readOff(path.string(), &points);
+                try {
+                    std::vector<Point> points;
+                    readOff(path.string(), &points);
 
-                // Create the polyscope geometry
-                pc = polyscope::registerPointCloud("Points", points);
+                    // Create the polyscope geometry
+                    pc = polyscope::registerPointCloud("Points", points);
 
-                // Build spatial data structure
-                sds = std::make_unique<SpatialDataStructure>(points);
-                PointList storedPoints = sds->getPoints();
+                    // Build spatial data structure
+                    sds = std::make_unique<SpatialDataStructure>(points);
+                    PointList storedPoints = sds->getPoints();
+                }
+                catch( const std::invalid_argument& e ) {
+                    polyscope::error(e.what());
+                    return;
+                }
             }
         }
     }
