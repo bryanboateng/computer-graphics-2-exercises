@@ -28,6 +28,7 @@ using Point = std::array<float, 3>;
 using Normal = std::array<float, 3>;
 
 using PointList = std::vector<Point>;
+const int BUCKET_SIZE = 16;
 int nPts = 0;
 float radius = 0.0314;
 
@@ -88,8 +89,12 @@ public:
     SpatialDataStructure(PointList const& points)
         : m_points(points)
     {
+        int median = medianSearch();
+
+
 
     }
+
 
     virtual ~SpatialDataStructure() = default;
 
@@ -97,6 +102,24 @@ public:
     {
         return m_points;
     }
+
+    int medianSearch() const
+    {   
+        int median = 0;
+        std::vector<PointList> shortLists;
+        std::vector<
+        for(size_t i=0; i<m_points.size(); i=i+5){
+            if(m_points.begin() + i + 5 > m_points.end()){
+                shortLists.push_back(PointList(m_points.begin() + i, m_points.end()));
+            }
+            else{
+                shortLists.push_back(PointList(m_points.begin() + i, m_points.begin()+i+5));
+            }
+        }
+        
+        return median;
+    }
+
 
     virtual std::vector<Point> collectInRadius(const Point& p, float radius) const
     {
@@ -113,6 +136,7 @@ public:
 
         return result;
     }
+
 
     virtual std::vector<std::size_t> collectKNearest(const Point& p, unsigned int k) const
     {
@@ -161,7 +185,7 @@ void callback() {
     }
 
 
-    ImGui::InputInt("Point Number", &nPts);             // set a int variable
+    ImGui::InputInt("Point Number", &nPts);            
     ImGui::InputFloat("radius", &radius);
     if (ImGui::Button("Collect in Radius")){
         PointList storedPoints = sds->getPoints();
