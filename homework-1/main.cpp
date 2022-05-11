@@ -19,6 +19,7 @@
 #include <fstream>
 #include <stdlib.h>
 #include <queue> 
+#include <unordered_map>
 
 
 #include "args/args.hxx"
@@ -39,6 +40,7 @@ int k = 0;
 float radius = 0.0314;
 float max_x, max_y, max_z = -10000;
 float min_x, min_y, min_z = 10000;
+std::vector<std::string> structures;
 
 /**
  * Teach polyscope how to handle our datatype
@@ -103,6 +105,10 @@ void readOff(std::string const& filename, std::vector<Point>* points, std::vecto
             off_file.close();
             throw std::invalid_argument("Incorrect file format. This program only supports point data from OFF-files that contain the header keyword OFF. More about the specifications of OFF-Files can be found at: http://paulbourke.net/dataformats/oogl/#OFF");
         }
+        while(!structures.empty()){
+            polyscope::removeStructure(structures.back());
+            structures.pop_back();
+        }
     } else {
         throw std::invalid_argument("Unable to read file.");
     }
@@ -125,6 +131,7 @@ void createHyperplane(int axis, float median, std::vector<float> mins, std::vect
             PointList meshNodes{Point{mins[0],mins[1],median},Point{maxs[0],mins[1],median},Point{maxs[0],maxs[1],median},Point{mins[0],maxs[1],median}};
             polyscope::registerCurveNetwork(uid, meshNodes, edges);
         }
+        structures.push_back(uid);
         polyscope::getCurveNetwork(uid)->setColor({255,0,0});
         polyscope::getCurveNetwork(uid)->setRadius(0.001);
         
@@ -137,6 +144,7 @@ void createMainBox(std::vector<float> mins, std::vector<float> maxs){
         Point{maxs[0],maxs[1],maxs[2]},Point{maxs[0],mins[1],maxs[2]}
         };
     std::vector<std::array<int, 2>> edges{{0,1}, {1,2}, {2,3}, {3,0},{0,4},{1,5},{4,5},{2,6},{3,7},{6,7},{4,7},{5,6}};
+    structures.push_back("mainbb");
     polyscope::registerCurveNetwork("mainbb", meshNodes, edges);
 }
 
