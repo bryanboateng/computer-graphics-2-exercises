@@ -34,7 +34,7 @@ using Point = std::array<float, 3>;
 using Normal = std::array<float, 3>;
 
 using PointList = std::vector<Point>;
-const int BUCKET_SIZE = 1000;
+const int BUCKET_SIZE = 400;
 int nPts = 0;
 int k = 0;
 float radius = 0.0314;
@@ -344,16 +344,16 @@ public:
         int axis= node->depth%3;
         if(node->left != nullptr && node->right != nullptr) createHyperplane(axis, node->median, mins, maxs, id);
         if(node->left != nullptr){
-            std::vector<float> mins_new = mins;
-            mins_new[axis] = node->median;
-            id = id + 1;
-            renderKDTree(node->left, mins_new, maxs, id);
-        }
-        if(node->right != nullptr){
             std::vector<float>maxs_new = maxs;
             maxs_new[axis] = node->median;
             id = id + 1;
-            renderKDTree(node->right, mins, maxs_new,id);
+            renderKDTree(node->left, mins, maxs_new,id);
+        }
+        if(node->right != nullptr){
+            std::vector<float> mins_new = mins;
+            mins_new[axis] = node->median;
+            id = id + 1;
+            renderKDTree(node->right, mins_new, maxs, id);
         }
         
 
