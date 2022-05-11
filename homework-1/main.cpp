@@ -27,6 +27,8 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include "glm/gtx/string_cast.hpp"
 
+#include "median_search.cpp"
+
 using Point = std::array<float, 3>;
 using Normal = std::array<float, 3>;
 
@@ -159,7 +161,8 @@ public:
     SpatialDataStructure(PointList const& points)
         : m_points(points)
     {
-        root = build_tree_using_sort(m_points, 0);
+        //root = build_tree_using_sort(m_points, 0);
+        root = build_tree_linear_median_search(&m_points,0);
 
         float median = medianSearch(y);
 
@@ -192,7 +195,32 @@ public:
             return root;
 
         }
-
+    kd_tree_node *build_tree_linear_median_search(std::vector<Point> *pts, int depth){
+            if (pts->size() == 0){
+            return NULL;
+        }
+        int axis = depth % 3;
+        float median = median_search::search(*pts,axis,pts->size()/2);
+        std::vector<Point> left,right;
+        kd_tree_node *leftChild = nullptr;
+        kd_tree_node *rightChild = nullptr;
+        PointList bucket;
+        if(pts->size() > BUCKET_SIZE){
+            for(std::size_t i = 0; i < pts->size(); ++i) {
+                if (pts->at(i)[axis] < median){
+                    left.push_back(pts->at(i));
+                }else{
+                    right.push_back(pts->at(i));
+                }
+            }
+            leftChild = build_tree_linear_median_search(&left, depth+1);
+            rightChild = build_tree_linear_median_search(&right, depth+1);
+        }else{
+            bucket = *pts;
+        }
+        kd_tree_node *retVal = new kd_tree_node(median,leftChild,rightChild, bucket, depth);
+        return retVal;
+    }
 
     virtual ~SpatialDataStructure() = default;
 
