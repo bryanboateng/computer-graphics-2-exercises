@@ -376,7 +376,7 @@ void callback() {
     ImGui::InputInt("k", &k); 
     if (ImGui::Button("Collect in Radius")){
         PointList storedPoints = sds->getPoints();
-        std::vector<Point> radiusPoints =  sds->collectInRadiusDUMMY(storedPoints[nPts], radius);
+        std::vector<Point> radiusPoints =  sds->collectInRadius(storedPoints[nPts], radius);
         polyscope::PointCloud* rpc = polyscope::registerPointCloud("Points in Radius", radiusPoints);
         rpc->setPointRadius(0.0051);
     }
