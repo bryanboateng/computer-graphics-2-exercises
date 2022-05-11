@@ -31,7 +31,7 @@ using Point = std::array<float, 3>;
 using Normal = std::array<float, 3>;
 
 using PointList = std::vector<Point>;
-const int BUCKET_SIZE = 140;
+const int BUCKET_SIZE = 1000;
 int nPts = 0;
 int k = 0;
 float radius = 0.0314;
@@ -106,26 +106,37 @@ void readOff(std::string const& filename, std::vector<Point>* points, std::vecto
     }
 }
 
-void createHyperplane(int axis, float median, std::vector<float> mins, std::vector<float> maxs){
+void createHyperplane(int axis, float median, std::vector<float> mins, std::vector<float> maxs, int id){
 
         std::vector<std::array<int, 2>> edges{{0,1}, {1,2}, {2,3}, {3,0}};
+        std::string uid = "kd grid_" + std::to_string(id);
 
         if(axis == 0){
              PointList meshNodes{Point{median,mins[1],mins[2]},Point{median,maxs[1],mins[2]},Point{median,maxs[1],maxs[2]},Point{median,mins[1],maxs[2]}};
-             polyscope::registerCurveNetwork("kd grid" + std::to_string(axis)+ "_"  + std::to_string(median), meshNodes, edges);
+             polyscope::registerCurveNetwork(uid, meshNodes, edges);
         }
         if(axis == 1){
              PointList meshNodes{Point{mins[0],median,mins[2]},Point{maxs[0],median,mins[2]},Point{maxs[0],median,maxs[2]},Point{mins[0],median,maxs[2]}};
-             polyscope::registerCurveNetwork("kd grid" + std::to_string(axis)+ "_" + std::to_string(median), meshNodes, edges);
+             polyscope::registerCurveNetwork(uid, meshNodes, edges);
         }
         if(axis==2){
             PointList meshNodes{Point{mins[0],mins[1],median},Point{maxs[0],mins[1],median},Point{maxs[0],maxs[1],median},Point{mins[0],maxs[1],median}};
-            polyscope::registerCurveNetwork("kd grid" + std::to_string(axis)+ "_" + std::to_string(median), meshNodes, edges);
+            polyscope::registerCurveNetwork(uid, meshNodes, edges);
         }
+        polyscope::getCurveNetwork(uid)->setColor({255,0,0});
+        polyscope::getCurveNetwork(uid)->setRadius(0.001);
         
-
 }
-
+void createMainBox(std::vector<float> mins, std::vector<float> maxs){
+    PointList meshNodes{
+        Point{mins[0],mins[1],mins[2]},Point{mins[0],maxs[1],mins[2]},
+        Point{mins[0],maxs[1],maxs[2]},Point{mins[0],mins[1],maxs[2]},
+        Point{maxs[0],mins[1],mins[2]},Point{maxs[0],maxs[1],mins[2]},
+        Point{maxs[0],maxs[1],maxs[2]},Point{maxs[0],mins[1],maxs[2]}
+        };
+    std::vector<std::array<int, 2>> edges{{0,1}, {1,2}, {2,3}, {3,0},{0,4},{1,5},{4,5},{2,6},{3,7},{6,7},{4,7},{5,6}};
+    polyscope::registerCurveNetwork("mainbb", meshNodes, edges);
+}
 
 struct EuclideanDistance
 {
@@ -157,6 +168,8 @@ public:
             if (pts.size() == 0){
                 return NULL;
             }
+            //std::cout << "depth " + std::to_string(depth) << std::endl;
+
             std::sort(pts.begin(), pts.end(), [&](Point a, Point b) {
                 return a[depth%3] > b[depth%3];
              });
@@ -168,7 +181,9 @@ public:
              if(pts.size() > BUCKET_SIZE){
                 PointList left,right;
                 left.assign(pts.begin(), pts.begin()+median);
-                right.assign(pts.begin() + median + 1, pts.end());
+                right.assign(pts.begin() + median, pts.end());
+                std::cout << "Points in left: " << std::to_string(left.size()) + " ,depth: " + std::to_string(depth) << std::endl;
+                std::cout << "Points in right: " << std::to_string(right.size()) + " ,depth: " + std::to_string(depth) << std::endl;
                 leftChild = build_tree_using_sort(left, depth+1);
                 rightChild = build_tree_using_sort(right, depth+1);
              }
@@ -214,7 +229,6 @@ public:
         }
         std::sort(medianList.begin(), medianList.end());
         median = medianList[medianList.size()/2];
-        std::cout << median << std::endl;
         return median;
     }
 
@@ -250,20 +264,21 @@ public:
         return result;
     }
 
-    void renderKDTree(kd_tree_node* node, std::vector<float> mins, std::vector<float> maxs) const
+    void renderKDTree(kd_tree_node* node, std::vector<float> mins, std::vector<float> maxs, int& id) const
     {   
         int axis= node->depth%3;
-        std::cout << axis << std::endl;
-        createHyperplane(axis, node->median, mins, maxs);
+        if(node->left != nullptr && node->right != nullptr) createHyperplane(axis, node->median, mins, maxs, id);
         if(node->left != nullptr){
-            std::vector<float >maxs_new = maxs;
-            maxs_new[axis] = node->median;
-            renderKDTree(node->left, mins, maxs_new);
-        }
-        if(node->right != nullptr){
             std::vector<float> mins_new = mins;
             mins_new[axis] = node->median;
-            renderKDTree(node->right, mins_new, maxs);
+            id = id + 1;
+            renderKDTree(node->left, mins_new, maxs, id);
+        }
+        if(node->right != nullptr){
+            std::vector<float>maxs_new = maxs;
+            maxs_new[axis] = node->median;
+            id = id + 1;
+            renderKDTree(node->right, mins, maxs_new,id);
         }
         
 
@@ -317,16 +332,22 @@ void callback() {
         PointList storedPoints = sds->getPoints();
         std::vector<Point> radiusPoints =  sds->collectInRadius(storedPoints[nPts], radius);
         polyscope::PointCloud* rpc = polyscope::registerPointCloud("Points in Radius", radiusPoints);
+        rpc->setPointRadius(0.0051);
     }
     if (ImGui::Button("Collect K Nearest")){
         PointList storedPoints = sds->getPoints();
         std::vector<Point> radiusPoints =  sds->collectKNearest(storedPoints[nPts], k);
         polyscope::PointCloud* rpc = polyscope::registerPointCloud("Points in Radius", radiusPoints);
+        rpc->setPointRadius(0.0051);
     }   
     if (ImGui::Button("Render KD Tree")){
-        std::vector<float> maxs{max_x,max_y,max_z};
+        int id = 0;
         std::vector<float> mins{min_x,min_y,min_z};
-        sds->renderKDTree(sds->root,mins,maxs);
+        std::vector<float> maxs{max_x,max_y,max_z};
+        createMainBox(mins, maxs);
+        polyscope::getCurveNetwork("mainbb")->setColor({255,0,0});
+        polyscope::getCurveNetwork("mainbb")->setRadius(0.001);
+        sds->renderKDTree(sds->root,mins,maxs, id);
         
 
     }
