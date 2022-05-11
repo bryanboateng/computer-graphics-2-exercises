@@ -168,10 +168,9 @@ public:
             if (pts.size() == 0){
                 return NULL;
             }
-            //std::cout << "depth " + std::to_string(depth) << std::endl;
 
             std::sort(pts.begin(), pts.end(), [&](Point a, Point b) {
-                return a[depth%3] > b[depth%3];
+                return a[depth%3] < b[depth%3];
              });
              int median = pts.size()/2;
              kd_tree_node *leftChild = nullptr;
@@ -182,8 +181,6 @@ public:
                 PointList left,right;
                 left.assign(pts.begin(), pts.begin()+median);
                 right.assign(pts.begin() + median, pts.end());
-                std::cout << "Points in left: " << std::to_string(left.size()) + " ,depth: " + std::to_string(depth) << std::endl;
-                std::cout << "Points in right: " << std::to_string(right.size()) + " ,depth: " + std::to_string(depth) << std::endl;
                 leftChild = build_tree_using_sort(left, depth+1);
                 rightChild = build_tree_using_sort(right, depth+1);
              }
@@ -233,7 +230,7 @@ public:
     }
 
 
-    virtual std::vector<Point> collectInRadius(const Point& p, float radius) const
+    virtual std::vector<Point> collectInRadiusDUMMY(const Point& p, float radius) const
     {
         std::vector<Point> result;
 
@@ -247,6 +244,48 @@ public:
         }
 
         return result;
+    }
+
+    virtual std::vector<Point> collectInRadius(const Point& p, float radius) const
+    {
+        PointList list;
+        collectInRadiusKnn(&list, root, p, radius, 0);
+        std::cout << "Found: " << list.size() << " Points" << std::endl;
+        return list;
+    }
+
+     static void collectInRadiusKnn(PointList *list, kd_tree_node * cursor, const Point& p, float radius, int axis){
+        if (cursor != nullptr){
+            if(cursor->bucket.size() > 0){
+                for(size_t i=0; i<cursor->bucket.size();i++){
+                    float distance = EuclideanDistance::measure(p, cursor->bucket[i]);
+                    if (distance <= radius){
+                        list->push_back(cursor->bucket[i]);
+
+                    }
+                }
+            }
+            kd_tree_node *nonMatchingSide = nullptr;
+            kd_tree_node *matchingSide = nullptr;
+            //Left child exists
+            if (cursor->median > p[axis]){
+                matchingSide = cursor->left;
+                nonMatchingSide = cursor->right;
+            }else{
+                matchingSide = cursor->right;
+                nonMatchingSide = cursor->left;
+            }
+            collectInRadiusKnn(list,matchingSide, p, radius, (axis+1)%3);
+            if (nonMatchingSide != nullptr){
+                float x = (axis == 0) ? cursor->median: p[0];
+                float y = (axis == 1) ? cursor->median: p[1];
+                float z = (axis == 2) ? cursor->median: p[2];
+                if(EuclideanDistance::measure(p, Point{x,y,z}) <= radius){
+                    collectInRadiusKnn(list,nonMatchingSide,p, radius, (axis+1)%3);
+                }
+            } 
+        }
+        return;
     }
 
 
@@ -282,6 +321,13 @@ public:
         }
         
 
+    }
+    void print_points(PointList pts)
+    {
+        std::cout<<"Printing points"<<std::endl;
+        for(size_t i=0;i<pts.size();i++){
+            printf("(%f %f %f)\n",pts[i][0],pts[i][1],pts[i][2]);
+        }
     }
 private:
     PointList m_points;
@@ -330,7 +376,7 @@ void callback() {
     ImGui::InputInt("k", &k); 
     if (ImGui::Button("Collect in Radius")){
         PointList storedPoints = sds->getPoints();
-        std::vector<Point> radiusPoints =  sds->collectInRadius(storedPoints[nPts], radius);
+        std::vector<Point> radiusPoints =  sds->collectInRadiusDUMMY(storedPoints[nPts], radius);
         polyscope::PointCloud* rpc = polyscope::registerPointCloud("Points in Radius", radiusPoints);
         rpc->setPointRadius(0.0051);
     }
