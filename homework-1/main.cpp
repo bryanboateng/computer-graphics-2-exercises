@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <queue> 
 #include <unordered_map>
+#include <limits>
 
 
 #include "args/args.hxx"
@@ -51,6 +52,7 @@ class kd_tree_node{
     float median;
     kd_tree_node *left;
     kd_tree_node *right;
+    kd_tree_node *parent = nullptr;
     PointList bucket;
     int depth;
     kd_tree_node(float p, kd_tree_node *l, kd_tree_node *r, PointList b, int d){
@@ -169,40 +171,9 @@ public:
     SpatialDataStructure(PointList const& points)
         : m_points(points)
     {
-        //root = build_tree_using_sort(m_points, 0);
         root = build_tree_linear_median_search(&m_points,0);
-
-        float median = medianSearch(y);
-
     }
-    kd_tree_node* build_tree_using_sort(PointList &pts, int depth){
-            if (pts.size() == 0){
-                return NULL;
-            }
 
-            std::sort(pts.begin(), pts.end(), [&](Point a, Point b) {
-                return a[depth%3] < b[depth%3];
-             });
-             int median = pts.size()/2;
-             kd_tree_node *leftChild = nullptr;
-             kd_tree_node *rightChild = nullptr;
-             PointList bucket;
-
-             if(pts.size() > BUCKET_SIZE){
-                PointList left,right;
-                left.assign(pts.begin(), pts.begin()+median);
-                right.assign(pts.begin() + median, pts.end());
-                leftChild = build_tree_using_sort(left, depth+1);
-                rightChild = build_tree_using_sort(right, depth+1);
-             }
-             else{
-                 bucket = pts;
-             }
-             float median_val = pts[median][depth%3];
-             kd_tree_node *root = new kd_tree_node(median_val, leftChild, rightChild, bucket, depth);
-            return root;
-
-        }
     kd_tree_node *build_tree_linear_median_search(std::vector<Point> *pts, int depth){
             if (pts->size() == 0){
             return NULL;
@@ -227,6 +198,8 @@ public:
             bucket = *pts;
         }
         kd_tree_node *retVal = new kd_tree_node(median,leftChild,rightChild, bucket, depth);
+        if (leftChild != nullptr) leftChild->parent = retVal;
+        if (rightChild != nullptr) rightChild->parent = retVal;
         return retVal;
     }
 
@@ -239,37 +212,9 @@ public:
     
     enum axis {x=0, y=1, z=2};
 
-
-    int medianSearch(axis ax) const
-    {   
-        float median = 0;
-        std::vector<PointList> shortLists;
-        std::vector<float> medianList;
-        for(size_t i=0; i<m_points.size(); i=i+5){
-            if(m_points.begin() + i + 5 > m_points.end()){
-                shortLists.push_back(PointList(m_points.begin() + i, m_points.end()));
-            }
-            else{
-                shortLists.push_back(PointList(m_points.begin() + i, m_points.begin()+i+5));
-            }
-        }
-        for(auto shortList : shortLists){
-            std::sort(shortList.begin(), shortList.end(),
-                       [ax](const Point& a, const Point& b) {
-                         return a[ax] < b[ax];});
-            int shortListLength = shortList.size();
-            medianList.push_back(shortList[shortListLength/2][ax]);
-        }
-        std::sort(medianList.begin(), medianList.end());
-        median = medianList[medianList.size()/2];
-        return median;
-    }
-
-
-    virtual std::vector<Point> collectInRadiusDUMMY(const Point& p, float radius) const
+    virtual std::vector<Point> collectInRadiusBruteForce(const Point& p, float radius) const
     {
         std::vector<Point> result;
-
         // Dummy brute-force implementation
         // TODO: Use spatial data structure for sub-linear search
         for (size_t i = 0; i < m_points.size(); ++i)
@@ -286,7 +231,6 @@ public:
     {
         PointList list;
         collectInRadiusKnn(&list, root, p, radius, 0);
-        std::cout << "Found: " << list.size() << " Points" << std::endl;
         return list;
     }
 
@@ -316,7 +260,9 @@ public:
                 float x = (axis == 0) ? cursor->median: p[0];
                 float y = (axis == 1) ? cursor->median: p[1];
                 float z = (axis == 2) ? cursor->median: p[2];
-                if(EuclideanDistance::measure(p, Point{x,y,z}) <= radius){
+                float distance = EuclideanDistance::measure(p, Point{x,y,z});
+                bool compareValue = (nonMatchingSide == cursor->left) ? distance <= radius : distance < radius;
+                if(compareValue){
                     collectInRadiusKnn(list,nonMatchingSide,p, radius, (axis+1)%3);
                 }
             } 
@@ -324,20 +270,135 @@ public:
         return;
     }
 
-
-    virtual std::vector<Point> collectKNearest(const Point& p, unsigned int k) const
-    {
-        std::vector<Point> result;
-
-        // Bogus knn implementation, giving you the first k points!
-        // TODO: Use spatial data structure for sub-linear search
-        for (std::size_t i = 0; (i < k) && (i < m_points.size()); ++i)
-        {
-            result.push_back(m_points[i]);
+    void collectDistanceToBuckets(kd_tree_node * cursor, const Point & p, std::vector<std::pair<kd_tree_node *, float>> *leafDistances) const {
+        if (cursor != nullptr){
+            if(cursor->bucket.size() > 0){
+                if (cursor == root){
+                    leafDistances->push_back(std::pair(cursor, 0));
+                }else{
+                    float splitMedian = cursor->parent->median;
+                    int splitAxis = (cursor->parent->depth % 3);
+                    float distance;
+                    if (splitMedian > p[splitAxis] && cursor==cursor->parent->left){
+                        distance = 0;
+                    }else if(splitMedian <= p[splitAxis] && cursor==cursor->parent->right){
+                        distance = 0;
+                    }else{
+                        float x = (splitAxis == 0) ? splitMedian: p[0];
+                        float y = (splitAxis == 1) ? splitMedian: p[1];
+                        float z = (splitAxis == 2) ? splitMedian: p[2];
+                        float distance = EuclideanDistance::measure(p,Point{x,y,z});
+                    }
+                    leafDistances->push_back(std::pair(cursor, distance));
+                }
+            }
+            collectDistanceToBuckets(cursor->left, p, leafDistances);
+            collectDistanceToBuckets(cursor->right, p, leafDistances);
         }
+    }
 
+    virtual PointList collectNClosest(const PointList &list, const Point &p, size_t n) const{
+        if (n >= list.size()){
+            return list;
+        }
+        PointList result;
+        std::vector<std::pair<int,float>> distances; //index+distance
+        for (size_t i=0; i<list.size(); i++){
+            float distance = EuclideanDistance::measure(p,list[i]);
+            distances.push_back(std::pair<int,float>(i,distance));
+        }
+        std::sort(distances.begin(), distances.end(), [=](std::pair<int, float>& a, std::pair<int, float>& b)
+        {
+            return a.second < b.second;
+        });
+        for(size_t i=0;i<n;i++){
+            result.push_back(list[distances[i].first]);
+        }
         return result;
     }
+
+    virtual PointList collectCloserThan(const PointList &list, const Point &p, float maxDistance, size_t maxPoints) const{
+        PointList result;
+        std::vector<std::pair<int,float>> distances;
+        for (size_t i=0; i<list.size(); i++){
+            float distance = EuclideanDistance::measure(p,list[i]);
+            if (distance <=maxDistance){
+                distances.push_back(std::pair<int,float>(i,distance));
+            }
+        }
+        std::sort(distances.begin(), distances.end(), [=](std::pair<int, float>& a, std::pair<int, float>& b)
+        {
+            return a.second < b.second;
+        });
+        for(size_t i=0;i<distances.size() && i<maxPoints;i++){
+            result.push_back(list[distances[i].first]);
+        }
+        return result;
+    }
+    /**
+     * Algorithm:
+     *  -> traverse entire tree, calculate minimum distance from point to leaves
+     *  -> fill up k nearest candidates candidates from closest bucket/s
+     *  -> make sure to check all buckets where the minimum distance is less than
+     *     the furthest point in the candidates list.
+     * */
+    virtual PointList collectKNearest(const Point& p, unsigned int k) const
+    {
+        kd_tree_node * cursor = root;
+        bool found = false;
+        std::vector<std::pair<kd_tree_node *, float>> bucketDistances;
+        collectDistanceToBuckets(root,p,&bucketDistances);
+        std::sort(bucketDistances.begin(), bucketDistances.end(), [=](std::pair<kd_tree_node *, float>& a, std::pair<kd_tree_node *, float>& b)
+        {
+            return a.second < b.second;
+        });
+        std::priority_queue<std::pair<float, Point>> queue;
+        size_t position = 0;
+        while(queue.size()<k && position<bucketDistances.size()){
+            PointList bucket = bucketDistances[position].first->bucket;
+            PointList nClosest = collectNClosest(bucket,p,k-queue.size());
+            for(Point entry: nClosest){
+                float distance = EuclideanDistance::measure(p,entry);
+                queue.push(std::pair<float,Point>(distance,entry));
+            }
+            if(bucket.size() == nClosest.size()){
+                position+=1;
+            }
+        }
+        while(position<bucketDistances.size()){
+            float maxDistance = queue.top().first;
+            auto bucketPair = bucketDistances[position];
+            if (bucketPair.second > maxDistance){
+                break;
+            }
+            PointList bucket = bucketDistances[position].first->bucket;
+            PointList nClosest = collectCloserThan(bucket,p,maxDistance,k);
+            
+            for(auto item: nClosest){
+                float distance = EuclideanDistance::measure(p,item);
+                auto maxValue = queue.top();
+                if(distance<maxValue.first){
+                    queue.pop();
+                    queue.push(std::pair<float,Point>(distance,item));
+                }else{
+                    break;
+                }
+            }
+            position += 1;
+        }
+        PointList result;
+        while (!queue.empty())
+        {
+            result.push_back(queue.top().second);
+            queue.pop();
+        }
+        return result;
+    }
+
+    virtual PointList collectKNearestBruteForce(const Point& p, unsigned int k) const {
+        return collectNClosest(m_points, p, k);
+    }
+
 
     void renderKDTree(kd_tree_node* node, std::vector<float> mins, std::vector<float> maxs, int& id) const
     {   
@@ -410,18 +471,30 @@ void callback() {
     ImGui::InputInt("Point Number", &nPts);            
     ImGui::InputFloat("radius", &radius);
     ImGui::InputInt("k", &k); 
-    if (ImGui::Button("Collect in Radius")){
+    if (ImGui::Button("Collect in Radius KD Tree")){
         PointList storedPoints = sds->getPoints();
         std::vector<Point> radiusPoints =  sds->collectInRadius(storedPoints[nPts], radius);
         polyscope::PointCloud* rpc = polyscope::registerPointCloud("Points in Radius", radiusPoints);
         rpc->setPointRadius(0.0051);
     }
-    if (ImGui::Button("Collect K Nearest")){
+    if (ImGui::Button("Collect in Radius Brute Force")){
+        PointList storedPoints = sds->getPoints();
+        std::vector<Point> radiusPoints =  sds->collectInRadiusBruteForce(storedPoints[nPts], radius);
+        polyscope::PointCloud* rpc = polyscope::registerPointCloud("Points in Radius", radiusPoints);
+        rpc->setPointRadius(0.0051);
+    }
+    if (ImGui::Button("Collect K Nearest KD Tree")){
         PointList storedPoints = sds->getPoints();
         std::vector<Point> radiusPoints =  sds->collectKNearest(storedPoints[nPts], k);
         polyscope::PointCloud* rpc = polyscope::registerPointCloud("Points in Radius", radiusPoints);
         rpc->setPointRadius(0.0051);
-    }   
+    }
+    if (ImGui::Button("Collect K Nearest Brute Force")){
+        PointList storedPoints = sds->getPoints();
+        std::vector<Point> radiusPoints =  sds->collectKNearestBruteForce(storedPoints[nPts], k);
+        polyscope::PointCloud* rpc = polyscope::registerPointCloud("Points in Radius", radiusPoints);
+        rpc->setPointRadius(0.0051);
+    } 
     if (ImGui::Button("Render KD Tree")){
         int id = 0;
         std::vector<float> mins{min_x,min_y,min_z};
