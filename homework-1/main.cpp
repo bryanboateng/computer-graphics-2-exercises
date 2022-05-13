@@ -344,6 +344,10 @@ public:
      * */
     virtual PointList collectKNearest(const Point& p, unsigned int k) const
     {
+        PointList result;
+        if (k == 0){
+            return result;
+        }
         kd_tree_node * cursor = root;
         bool found = false;
         std::vector<std::pair<kd_tree_node *, float>> bucketDistances;
@@ -386,7 +390,6 @@ public:
             }
             position += 1;
         }
-        PointList result;
         while (!queue.empty())
         {
             result.push_back(queue.top().second);
