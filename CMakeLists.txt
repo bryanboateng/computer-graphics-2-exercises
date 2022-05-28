@@ -81,7 +81,7 @@ else()
 endif()
 
 # Create an executable
-add_executable(ex1 main.cpp)
+add_executable(ex1 visualizations/exercise1/main.cpp)
 
 # Add header-only dependencies
 target_include_directories(ex1 PRIVATE "${polyscope_SOURCE_DIR}/deps/args")
