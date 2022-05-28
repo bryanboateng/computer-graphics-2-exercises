@@ -82,10 +82,14 @@ endif()
 
 # Create an executable
 add_executable(ex1 visualizations/exercise1/main.cpp)
+add_executable(ex2 visualizations/exercise2/main.cpp)
 
 # Add header-only dependencies
 target_include_directories(ex1 PRIVATE "${polyscope_SOURCE_DIR}/deps/args")
+target_include_directories(ex2 PRIVATE "${polyscope_SOURCE_DIR}/deps/args")
 target_include_directories(ex1 PRIVATE "${polyscope_SOURCE_DIR}/deps/json/include")
+target_include_directories(ex2 PRIVATE "${polyscope_SOURCE_DIR}/deps/json/include")
 
 # Link to dependencies
 target_link_libraries(ex1 polyscope portable_file_dialogs)
+target_link_libraries(ex2 polyscope portable_file_dialogs)
