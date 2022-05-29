@@ -23,6 +23,34 @@ std::vector<std::string> structures;
 polyscope::PointCloud* point_cloud = nullptr;
 std::unique_ptr<KdTree> kd_tree;
 
+void createGrid(float min_x, float max_x, float min_y, float max_y) {
+    PointList meshNodes;
+    std::vector<std::array<int, 2>> edges;
+
+    for (float i = 0; i <= grid_x_count; i++) {
+        auto frac = 1 - (i / grid_x_count);
+        meshNodes.push_back(Point{frac * min_x + (1 - frac) * max_x, min_y, 0});
+        meshNodes.push_back(Point{frac * min_x + (1 - frac) * max_x, max_y, 0});
+    }
+
+    for (float i = 0; i <= grid_y_count; i++) {
+        auto frac = 1 - (i / grid_y_count);
+        meshNodes.push_back(Point{min_x, frac * min_y + (1 - frac) * max_y, 0});
+        meshNodes.push_back(Point{max_x, frac * min_y + (1 - frac) * max_y, 0});
+    }
+
+    int edge_count = meshNodes.size() / 2;
+    for (int i = 0; i < edge_count; i++) {
+        edges.push_back({i * 2, i * 2 + 1});
+    }
+
+    structures.push_back("grid");
+    polyscope::registerCurveNetwork("grid", meshNodes, edges);
+    auto gridCurveNetwork = polyscope::getCurveNetwork("grid");
+    gridCurveNetwork->setColor({255, 0, 0});
+    gridCurveNetwork->setRadius(0.001);
+}
+
 void callback() {
     if (ImGui::Button("Load Points")) {
         auto paths = pfd::open_file("Load Points", "", std::vector<std::string>{"point data (*.off)", "*.off"}, pfd::opt::none).result();
@@ -40,11 +68,12 @@ void callback() {
                     structures.pop_back();
                 }
 
-                // Create the polyscope geometry
-                point_cloud = polyscope::registerPointCloud("Points", points);
-
                 // Build spatial data structure
                 kd_tree = std::make_unique<KdTree>(points, minima, maxima);
+
+                // Create the polyscope geometry
+                point_cloud = polyscope::registerPointCloud("Points", points);
+                createGrid(minima[0], maxima[0], minima[1], maxima[1]);
             } catch (const std::invalid_argument& e) {
                 polyscope::error(e.what());
                 return;
