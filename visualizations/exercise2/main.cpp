@@ -98,6 +98,7 @@ int main(int argc, char** argv) {
     // Options
     polyscope::options::groundPlaneMode = polyscope::GroundPlaneMode::ShadowOnly;
     polyscope::options::shadowBlurIters = 6;
+    polyscope::view::upDir = polyscope::UpDir::ZUp;
     // Initialize polyscope
     polyscope::init();
 
