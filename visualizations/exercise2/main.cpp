@@ -12,7 +12,7 @@ float control_points_radius = 0.1;
 bool show_grid = false;
 bool show_control_mesh = false;
 
-int is_bezier = 1;  // 0 -> mls surface
+int is_bezier = 1; // 0 -> mls surface
 bool show_surface_mesh = false;
 bool show_normals = false;
 bool show_tangents = false;
@@ -20,27 +20,31 @@ int subdivision_count;
 float mls_radius = 0.1;
 
 std::vector<std::string> structures;
-polyscope::PointCloud* point_cloud = nullptr;
+polyscope::PointCloud *point_cloud = nullptr;
 std::unique_ptr<KdTree> kd_tree;
 
-void createGrid(float min_x, float max_x, float min_y, float max_y) {
+void createGrid(float min_x, float max_x, float min_y, float max_y)
+{
     PointList meshNodes;
     std::vector<std::array<int, 2>> edges;
 
-    for (float i = 0; i <= grid_x_count; i++) {
+    for (float i = 0; i <= grid_x_count; i++)
+    {
         auto frac = 1 - (i / grid_x_count);
         meshNodes.push_back(Point{frac * min_x + (1 - frac) * max_x, min_y, 0});
         meshNodes.push_back(Point{frac * min_x + (1 - frac) * max_x, max_y, 0});
     }
 
-    for (float i = 0; i <= grid_y_count; i++) {
+    for (float i = 0; i <= grid_y_count; i++)
+    {
         auto frac = 1 - (i / grid_y_count);
         meshNodes.push_back(Point{min_x, frac * min_y + (1 - frac) * max_y, 0});
         meshNodes.push_back(Point{max_x, frac * min_y + (1 - frac) * max_y, 0});
     }
 
     int edge_count = meshNodes.size() / 2;
-    for (int i = 0; i < edge_count; i++) {
+    for (int i = 0; i < edge_count; i++)
+    {
         edges.push_back({i * 2, i * 2 + 1});
     }
 
@@ -51,19 +55,24 @@ void createGrid(float min_x, float max_x, float min_y, float max_y) {
     gridCurveNetwork->setRadius(0.001);
 }
 
-void callback() {
-    if (ImGui::Button("Load Points")) {
+void callback()
+{
+    if (ImGui::Button("Load Points"))
+    {
         auto paths = pfd::open_file("Load Points", "", std::vector<std::string>{"point data (*.off)", "*.off"}, pfd::opt::none).result();
-        if (!paths.empty()) {
+        if (!paths.empty())
+        {
             std::filesystem::path path(paths[0]);
 
             // Read the point cloud
-            try {
+            try
+            {
                 auto parse_result = parseOff(path.string());
                 std::vector<Point> points = std::get<0>(parse_result);
                 std::vector<float> minima = std::get<2>(parse_result);
                 std::vector<float> maxima = std::get<3>(parse_result);
-                while (!structures.empty()) {
+                while (!structures.empty())
+                {
                     polyscope::removeStructure(structures.back());
                     structures.pop_back();
                 }
@@ -74,7 +83,9 @@ void callback() {
                 // Create the polyscope geometry
                 point_cloud = polyscope::registerPointCloud("Points", points);
                 createGrid(minima[0], maxima[0], minima[1], maxima[1]);
-            } catch (const std::invalid_argument& e) {
+            }
+            catch (const std::invalid_argument &e)
+            {
                 polyscope::error(e.what());
                 return;
             }
@@ -107,18 +118,23 @@ void callback() {
     ImGui::SliderFloat("Radius (MLS only)", &mls_radius, 0.0f, 1.0f, "%.3f");
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char **argv)
+{
     // Configure the argument parser
     args::ArgumentParser parser("Computer Graphics 2 Sample Code.");
 
     // Parse args
-    try {
+    try
+    {
         parser.ParseCLI(argc, argv);
-
-    } catch (const args::Help&) {
+    }
+    catch (const args::Help &)
+    {
         std::cout << parser;
         return 0;
-    } catch (const args::ParseError& e) {
+    }
+    catch (const args::ParseError &e)
+    {
         std::cerr << e.what() << std::endl;
         std::cerr << parser;
         return 1;
