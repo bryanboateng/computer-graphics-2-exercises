@@ -12,6 +12,8 @@ float radius = 0.0314;
 std::vector<std::string> structures;
 polyscope::PointCloud *point_cloud = nullptr;
 std::unique_ptr<KdTree> kd_tree;
+std::vector<float> minima;
+std::vector<float> maxima;
 
 void createHyperplane(int axis, float median, std::vector<float> minima, std::vector<float> maxima, int id)
 {
@@ -85,8 +87,8 @@ void callback()
             {
                 auto parse_result = parseOff(path.string());
                 std::vector<Point> points = std::get<0>(parse_result);
-                std::vector<float> minima = std::get<2>(parse_result);
-                std::vector<float> maxima = std::get<3>(parse_result);
+                minima = std::get<2>(parse_result);
+                maxima = std::get<3>(parse_result);
                 while (!structures.empty())
                 {
                     polyscope::removeStructure(structures.back());
@@ -97,7 +99,7 @@ void callback()
                 point_cloud = polyscope::registerPointCloud("Points", points);
 
                 // Build spatial data structure
-                kd_tree = std::make_unique<KdTree>(points, minima, maxima);
+                kd_tree = std::make_unique<KdTree>(points);
             }
             catch (const std::invalid_argument &e)
             {
@@ -127,10 +129,10 @@ void callback()
     if (ImGui::Button("Render KD Tree"))
     {
         int id = 0;
-        createMainBox(kd_tree->minima, kd_tree->maxima);
+        createMainBox(minima, maxima);
         polyscope::getCurveNetwork("mainbb")->setColor({255, 0, 0});
         polyscope::getCurveNetwork("mainbb")->setRadius(0.001);
-        renderKDTree(kd_tree->root, kd_tree->minima, kd_tree->maxima, id);
+        renderKDTree(kd_tree->root, minima, maxima, id);
     }
 }
 

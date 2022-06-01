@@ -25,6 +25,14 @@ FetchContent_Declare(
   GIT_PROGRESS TRUE)
 FetchContent_MakeAvailable(polyscope)
 
+FetchContent_Declare(
+        Eigen
+        GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+        GIT_TAG master
+        GIT_SHALLOW TRUE
+        GIT_PROGRESS TRUE)
+FetchContent_MakeAvailable(Eigen)
+
 # Maybe stop from CMAKEing in the wrong place
 if (CMAKE_BINARY_DIR STREQUAL CMAKE_SOURCE_DIR)
     message(FATAL_ERROR "Source and build directories cannot be the same. Go use the /build directory.")
@@ -92,4 +100,4 @@ target_include_directories(ex2 PRIVATE "${polyscope_SOURCE_DIR}/deps/json/includ
 
 # Link to dependencies
 target_link_libraries(ex1 polyscope portable_file_dialogs)
-target_link_libraries(ex2 polyscope portable_file_dialogs)
+target_link_libraries(ex2 polyscope portable_file_dialogs Eigen3::Eigen)

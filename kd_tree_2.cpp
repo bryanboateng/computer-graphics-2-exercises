@@ -1,29 +1,26 @@
 #include <cmath>
 #include <queue>
 
-#include "median_search.cpp"
 #include "typealiases.cpp"
 
-const int kMaxBucketSize = 400;
 
-static float euclideanDistance(Point const &p1, Point const &p2)
+static float euclideanDistance2(Point const &p1, Point const &p2)
 {
     float dx = p1[0] - p2[0];
     float dy = p1[1] - p2[1];
-    float dz = p1[2] - p2[2];
-    return std::sqrt(dx * dx + dy * dy + dz * dz);
+    return std::sqrt(dx * dx + dy * dy);
 }
 
-class KdTreeNode
+class KdTreeNode2
 {
 public:
     float median;
-    KdTreeNode *left;
-    KdTreeNode *right;
-    KdTreeNode *parent = nullptr;
+    KdTreeNode2 *left;
+    KdTreeNode2 *right;
+    KdTreeNode2 *parent = nullptr;
     PointList bucket;
     int depth;
-    KdTreeNode(float p, KdTreeNode *l, KdTreeNode *r, PointList b, int d)
+    KdTreeNode2(float p, KdTreeNode2 *l, KdTreeNode2 *r, PointList b, int d)
     {
         median = p;
         left = l;
@@ -33,17 +30,17 @@ public:
     }
 };
 
-class KdTree
+class KdTree2
 {
 public:
-    KdTreeNode *root;
-    KdTree(PointList const &points)
-        : m_points(points)
+    KdTreeNode2 *root;
+    KdTree2(PointList const &points)
+            : m_points(points)
     {
         root = build_tree_linear_median_search(&m_points, 0);
     }
 
-    virtual ~KdTree() = default;
+    virtual ~KdTree2() = default;
 
     PointList const &getPoints() const
     {
@@ -71,12 +68,12 @@ public:
         {
             return result;
         }
-        KdTreeNode *cursor = root;
+        KdTreeNode2 *cursor = root;
         bool found = false;
-        std::vector<std::pair<KdTreeNode *, float>> bucketDistances;
+        std::vector<std::pair<KdTreeNode2 *, float>> bucketDistances;
         collectDistanceToBuckets(root, p, &bucketDistances);
-        std::sort(bucketDistances.begin(), bucketDistances.end(), [=](std::pair<KdTreeNode *, float> &a, std::pair<KdTreeNode *, float> &b)
-                  { return a.second < b.second; });
+        std::sort(bucketDistances.begin(), bucketDistances.end(), [=](std::pair<KdTreeNode2 *, float> &a, std::pair<KdTreeNode2 *, float> &b)
+        { return a.second < b.second; });
         std::priority_queue<std::pair<float, Point>> queue;
         size_t position = 0;
         while (queue.size() < k && position < bucketDistances.size())
@@ -85,7 +82,7 @@ public:
             PointList nClosest = collectNClosest(bucket, p, k - queue.size());
             for (Point entry : nClosest)
             {
-                float distance = euclideanDistance(p, entry);
+                float distance = euclideanDistance2(p, entry);
                 queue.push(std::pair<float, Point>(distance, entry));
             }
             if (bucket.size() == nClosest.size())
@@ -106,7 +103,7 @@ public:
 
             for (auto item : nClosest)
             {
-                float distance = euclideanDistance(p, item);
+                float distance = euclideanDistance2(p, item);
                 auto maxValue = queue.top();
                 if (distance < maxValue.first)
                 {
@@ -129,17 +126,17 @@ public:
     }
 
 private:
-    KdTreeNode *build_tree_linear_median_search(std::vector<Point> *pts, int depth)
+    KdTreeNode2 *build_tree_linear_median_search(std::vector<Point> *pts, int depth)
     {
         if (pts->size() == 0)
         {
             return NULL;
         }
-        int axis = depth % 3;
+        int axis = depth % 2;
         float median = median_search::search(*pts, axis, pts->size() / 2);
         std::vector<Point> left, right;
-        KdTreeNode *leftChild = nullptr;
-        KdTreeNode *rightChild = nullptr;
+        KdTreeNode2 *leftChild = nullptr;
+        KdTreeNode2 *rightChild = nullptr;
         PointList bucket;
         if (pts->size() > kMaxBucketSize)
         {
@@ -161,7 +158,7 @@ private:
         {
             bucket = *pts;
         }
-        KdTreeNode *retVal = new KdTreeNode(median, leftChild, rightChild, bucket, depth);
+        KdTreeNode2 *retVal = new KdTreeNode2(median, leftChild, rightChild, bucket, depth);
         if (leftChild != nullptr)
             leftChild->parent = retVal;
         if (rightChild != nullptr)
@@ -179,11 +176,11 @@ private:
         std::vector<std::pair<int, float>> distances; // index+distance
         for (size_t i = 0; i < list.size(); i++)
         {
-            float distance = euclideanDistance(p, list[i]);
+            float distance = euclideanDistance2(p, list[i]);
             distances.push_back(std::pair<int, float>(i, distance));
         }
         std::sort(distances.begin(), distances.end(), [=](std::pair<int, float> &a, std::pair<int, float> &b)
-                  { return a.second < b.second; });
+        { return a.second < b.second; });
         for (size_t i = 0; i < n; i++)
         {
             result.push_back(list[distances[i].first]);
@@ -197,14 +194,14 @@ private:
         std::vector<std::pair<int, float>> distances;
         for (size_t i = 0; i < list.size(); i++)
         {
-            float distance = euclideanDistance(p, list[i]);
+            float distance = euclideanDistance2(p, list[i]);
             if (distance <= maxDistance)
             {
                 distances.push_back(std::pair<int, float>(i, distance));
             }
         }
         std::sort(distances.begin(), distances.end(), [=](std::pair<int, float> &a, std::pair<int, float> &b)
-                  { return a.second < b.second; });
+        { return a.second < b.second; });
         for (size_t i = 0; i < distances.size() && i < maxPoints; i++)
         {
             result.push_back(list[distances[i].first]);
@@ -212,7 +209,7 @@ private:
         return result;
     }
 
-    void collectDistanceToBuckets(KdTreeNode *cursor, const Point &p, std::vector<std::pair<KdTreeNode *, float>> *leafDistances) const
+    void collectDistanceToBuckets(KdTreeNode2 *cursor, const Point &p, std::vector<std::pair<KdTreeNode2 *, float>> *leafDistances) const
     {
         if (cursor != nullptr)
         {
@@ -225,7 +222,7 @@ private:
                 else
                 {
                     float splitMedian = cursor->parent->median;
-                    int splitAxis = (cursor->parent->depth % 3);
+                    int splitAxis = (cursor->parent->depth % 2);
                     float distance;
                     if (splitMedian > p[splitAxis] && cursor == cursor->parent->left)
                     {
@@ -240,7 +237,7 @@ private:
                         float x = (splitAxis == 0) ? splitMedian : p[0];
                         float y = (splitAxis == 1) ? splitMedian : p[1];
                         float z = (splitAxis == 2) ? splitMedian : p[2];
-                        float distance = euclideanDistance(p, Point{x, y, z});
+                        float distance = euclideanDistance2(p, Point{x, y, z});
                     }
                     leafDistances->push_back(std::pair(cursor, distance));
                 }
@@ -250,7 +247,7 @@ private:
         }
     }
 
-    static void collectInRadiusKnn(PointList *list, KdTreeNode *cursor, const Point &p, float radius, int axis)
+    static void collectInRadiusKnn(PointList *list, KdTreeNode2 *cursor, const Point &p, float radius, int axis)
     {
         if (cursor != nullptr)
         {
@@ -258,15 +255,15 @@ private:
             {
                 for (size_t i = 0; i < cursor->bucket.size(); i++)
                 {
-                    float distance = euclideanDistance(p, cursor->bucket[i]);
+                    float distance = euclideanDistance2(p, cursor->bucket[i]);
                     if (distance <= radius)
                     {
                         list->push_back(cursor->bucket[i]);
                     }
                 }
             }
-            KdTreeNode *nonMatchingSide = nullptr;
-            KdTreeNode *matchingSide = nullptr;
+            KdTreeNode2 *nonMatchingSide = nullptr;
+            KdTreeNode2 *matchingSide = nullptr;
             // Left child exists
             if (cursor->median > p[axis])
             {
@@ -278,17 +275,17 @@ private:
                 matchingSide = cursor->right;
                 nonMatchingSide = cursor->left;
             }
-            collectInRadiusKnn(list, matchingSide, p, radius, (axis + 1) % 3);
+            collectInRadiusKnn(list, matchingSide, p, radius, (axis + 1) % 2);
             if (nonMatchingSide != nullptr)
             {
                 float x = (axis == 0) ? cursor->median : p[0];
                 float y = (axis == 1) ? cursor->median : p[1];
                 float z = (axis == 2) ? cursor->median : p[2];
-                float distance = euclideanDistance(p, Point{x, y, z});
+                float distance = euclideanDistance2(p, Point{x, y, z});
                 bool compareValue = (nonMatchingSide == cursor->left) ? distance <= radius : distance < radius;
                 if (compareValue)
                 {
-                    collectInRadiusKnn(list, nonMatchingSide, p, radius, (axis + 1) % 3);
+                    collectInRadiusKnn(list, nonMatchingSide, p, radius, (axis + 1) % 2);
                 }
             }
         }
