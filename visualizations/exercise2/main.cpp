@@ -19,8 +19,6 @@ bool show_tangents = false;
 int subdivision_count;
 float mls_radius = 0.1;
 
-std::vector<std::string> structures;
-polyscope::PointCloud *point_cloud = nullptr;
 std::unique_ptr<KdTree> kd_tree;
 
 void createGrid(float min_x, float max_x, float min_y, float max_y)
@@ -48,11 +46,23 @@ void createGrid(float min_x, float max_x, float min_y, float max_y)
         edges.push_back({i * 2, i * 2 + 1});
     }
 
-    structures.push_back("grid");
-    polyscope::registerCurveNetwork("grid", meshNodes, edges);
-    auto gridCurveNetwork = polyscope::getCurveNetwork("grid");
-    gridCurveNetwork->setColor({255, 0, 0});
-    gridCurveNetwork->setRadius(0.001);
+    polyscope::registerCurveNetwork("grid", meshNodes, edges)
+        ->setColor({255, 0, 0})
+        ->setRadius(0.001);
+}
+
+void updateGrid()
+{
+    if (kd_tree == nullptr)
+        return;
+    if (polyscope::hasCurveNetwork("grid"))
+    {
+        polyscope::removeCurveNetwork("grid");
+    }
+    if (show_grid)
+    {
+        createGrid(kd_tree->minima[0], kd_tree->maxima[0], kd_tree->minima[1], kd_tree->maxima[1]);
+    }
 }
 
 void callback()
@@ -71,18 +81,13 @@ void callback()
                 std::vector<Point> points = std::get<0>(parse_result);
                 std::vector<float> minima = std::get<2>(parse_result);
                 std::vector<float> maxima = std::get<3>(parse_result);
-                while (!structures.empty())
-                {
-                    polyscope::removeStructure(structures.back());
-                    structures.pop_back();
-                }
 
                 // Build spatial data structure
                 kd_tree = std::make_unique<KdTree>(points, minima, maxima);
 
                 // Create the polyscope geometry
-                point_cloud = polyscope::registerPointCloud("Points", points);
-                createGrid(minima[0], maxima[0], minima[1], maxima[1]);
+                polyscope::registerPointCloud("Points", points);
+                updateGrid();
             }
             catch (const std::invalid_argument &e)
             {
@@ -97,14 +102,17 @@ void callback()
     ImGui::Text("Grid");
     ImGui::SameLine();
     ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x * 0.35f);
-    ImGui::SliderInt("##grid_x_count", &grid_x_count, 1, 30);
+    if (ImGui::SliderInt("##grid_x_count", &grid_x_count, 1, 30))
+        updateGrid();
     ImGui::SameLine();
-    ImGui::SliderInt("##grid_y_count", &grid_y_count, 1, 30);
+    if (ImGui::SliderInt("##grid_y_count", &grid_y_count, 1, 30))
+        updateGrid();
     ImGui::PopItemWidth();
     ImGui::SameLine();
     ImGui::Text("Width, Height");
     ImGui::SliderFloat("Radius", &control_points_radius, 0.0f, 1.0f, "%.3f");
-    ImGui::Checkbox("Show Grid", &show_grid);
+    if (ImGui::Checkbox("Show Grid", &show_grid))
+        updateGrid();
     ImGui::Checkbox("Show Control Mesh", &show_control_mesh);
     ImGui::Text("Surface");
     ImGui::Separator();
