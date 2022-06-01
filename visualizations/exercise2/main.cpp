@@ -19,7 +19,6 @@ bool show_control_mesh = false;
 int is_bezier = 1; // 0 -> mls surface
 bool show_surface_mesh = false;
 bool show_normals = false;
-bool show_tangents = false;
 int subdivision_count;
 float mls_radius = 0.1;
 
@@ -246,7 +245,6 @@ void callback()
     ImGui::RadioButton("MLS Surface", &is_bezier, 0);
     ImGui::Checkbox("Show Surface Mesh", &show_surface_mesh);
     ImGui::Checkbox("Show Normals", &show_normals);
-    ImGui::Checkbox("Show Tangents (Bézier only)", &show_tangents);
     ImGui::SliderInt("Subdivisions", &subdivision_count, 1, 10);
     ImGui::SliderFloat("Radius (MLS only)", &mls_radius, 0.0f, 1.0f, "%.3f");
 }
