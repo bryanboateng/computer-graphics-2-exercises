@@ -1,10 +1,10 @@
 #include <Eigen/Dense>
 
-#include "../../colors.cpp"
-#include "../../kd_tree.cpp"
-#include "../../kd_tree_2.cpp"
-#include "../../off_file_parser.cpp"
-#include "../../typealiases.cpp"
+#include "../../shared/colors.cpp"
+#include "../../shared/de_casteljau.cpp"
+#include "../../shared/kd_tree_2.cpp"
+#include "../../shared/off_file_parser.cpp"
+#include "../../shared/typealiases.cpp"
 #include "args/args.hxx"
 #include "polyscope/curve_network.h"
 #include "polyscope/point_cloud.h"
@@ -19,118 +19,107 @@ bool show_control_mesh = false;
 
 int is_bezier = 1; // 0 -> mls surface
 bool show_surface_mesh = false;
-bool show_normals = false;
 int subdivision_count = 0;
 float mls_radius = 0.1;
 
 class SpatialData
 {
 public:
-    std::unique_ptr<KdTree> kd_tree;
     std::unique_ptr<KdTree2> kd_tree_2;
     std::vector<float> minima;
     std::vector<float> maxima;
-    SpatialData(std::vector<Point> points, std::vector<float> mins, std::vector<float> maxs)
+    SpatialData(std::vector<Eigen::Vector3f> const &points, std::vector<float> mins, std::vector<float> maxs)
     {
-        kd_tree = std::make_unique<KdTree>(points);
         kd_tree_2 = std::make_unique<KdTree2>(points);
-        minima = mins;
-        maxima = maxs;
+        minima = std::move(mins);
+        maxima = std::move(maxs);
     }
-    PointList control_mesh_nodes;
+    std::vector<Eigen::Vector3f> control_mesh_nodes;
     std::vector<std::array<int, 2>> control_mesh_edges;
 };
 
 std::unique_ptr<SpatialData> spatial_data;
 
-float wendland(float d)
+double wendland(double d)
 {
     return std::pow((1 - d), 4) * (4 * d + 1);
 }
 
-std::pair<float, Point> weightedLeastSquares(float p_u, float p_v, float radius)
+float weightedLeastSquares(float u, float v, Eigen::Matrix<double, 6, 1> coefficients)
 {
-    auto collected_points = spatial_data->kd_tree_2->collectInRadius(Point{p_u, p_v, 0}, radius);
+    return coefficients[0] + coefficients[1] * u + coefficients[2] * v + coefficients[3] * u * u + coefficients[4] * u * v + coefficients[5] * v * v;
+}
 
-    Eigen::MatrixXf A = Eigen::MatrixXf::Zero(6, 6);
-    Eigen::VectorXf b = Eigen::VectorXf::Zero(6);
-    for (Point collected_point : collected_points)
+Eigen::Vector3f weightedLeastSquaresNormal(float u, float v, Eigen::Matrix<double, 6, 1> coefficients)
+{
+    Eigen::Vector3f derivative_cross_product;
+    derivative_cross_product << (-1) * (coefficients[1] + 2 * coefficients[3] * u + coefficients[4] * v), (-1) * (coefficients[2] + coefficients[4] * u + 2 * coefficients[5] * v), 1;
+    return derivative_cross_product / derivative_cross_product.norm();
+}
+
+Eigen::Matrix<double, 6, 1> weightedLeastSquaresCoefficients(float u, float v, float radius)
+{
+    Eigen::Vector2f p;
+    p << u, v;
+    std::vector<Eigen::Vector3f> collected_points = spatial_data->kd_tree_2->collectInRadius(p, radius);
+
+    Eigen::Matrix<double, 6, 6> A = Eigen::Matrix<double, 6, 6>::Zero();
+    Eigen::Matrix<double, 6, 1> b = Eigen::Matrix<double, 6, 1>::Zero();
+    Eigen::Vector2d d_p = p.cast<double>();
+    for (Eigen::Vector3f collected_point : collected_points)
     {
-        float wendland_value = wendland((Eigen::Vector2f(collected_point[0], collected_point[1]) - Eigen::Vector2f(p_u, p_v)).norm());
-        float u_i = collected_point[0];
-        float v_i = collected_point[1];
+        Eigen::Vector3d d_collected_point = collected_point.cast<double>();
+        double wendland_value = wendland((d_collected_point.head<2>() - d_p).norm());
+        double u_i = d_collected_point[0];
+        double v_i = d_collected_point[1];
 
-        Eigen::VectorXf base(6);
+        Eigen::Matrix<double, 6, 1> base;
         base << 1, u_i, v_i, u_i * u_i, u_i * v_i, v_i * v_i;
 
-        Eigen::MatrixXf A_i = (base * base.transpose()) * wendland_value;
+        Eigen::Matrix<double, 6, 6> A_i = (base * base.transpose()) * wendland_value;
         A += A_i;
-        Eigen::VectorXf b_i = base * collected_point[2] * wendland_value;
+        Eigen::Matrix<double, 6, 1> b_i = base * collected_point[2] * wendland_value;
         b += b_i;
     }
 
-    Eigen::VectorXf coefficients = A.llt().solve(b);
-    float z = coefficients[0] + coefficients[1] * p_u + coefficients[2] * p_v + coefficients[3] * p_u * p_u + coefficients[4] * p_u * p_v + coefficients[5] * p_v * p_v;
-
-    Eigen::Vector3f wgeg;
-    wgeg << (-1) * (coefficients[1] + 2 * coefficients[3] * p_u + coefficients[4] * p_v), (-1) * (coefficients[2] + coefficients[4] * p_u + 2 * coefficients[5] * p_v), 1;
-    Eigen::Vector3f hwu = wgeg / wgeg.norm();
-    return std::pair<float, Point>(z, {hwu[0], hwu[1], hwu[2]});
+    return A.llt().solve(b);
 }
 
-std::pair<Point, Point> deCasteljau(PointList const &points, int i, int r, float u)
+std::pair<Eigen::Vector3f, Eigen::Vector3f> get_bezier_surface_point_and_normal(float p_u, float p_v)
 {
-    if (r == 0)
-    {
-        return std::pair<Point, Point>(points[i], {0, 0, 0});
-    }
-    else
-    {
-        Point a = deCasteljau(points, i + 1, r - 1, u).first;
-        Point b = deCasteljau(points, i, r - 1, u).first;
-        Eigen::Vector3f vec_a;
-        vec_a << a[0], a[1], a[2];
-        Eigen::Vector3f vec_b;
-        vec_b << b[0], b[1], b[2];
-        Eigen::Vector3f result = (u * vec_a) + ((1 - u) * vec_b);
-        Eigen::Vector3f tangent = r * (vec_a - vec_b);
-        return std::pair<Point, Point>({result[0], result[1], result[2]}, {tangent[0], tangent[1], tangent[2]});
-    }
-}
-
-std::pair<Point, Point> get_bezier_surface_point(float p_u, float p_v)
-{
-    PointList points0;
+    std::vector<Eigen::Vector3f> bezier_points_x;
     for (int i_y = 0; i_y <= grid_y_count; i_y++)
     {
-        std::vector<Point> v1(spatial_data->control_mesh_nodes.begin() + i_y * (grid_x_count + 1), spatial_data->control_mesh_nodes.begin() + (i_y + 1) * (grid_x_count + 1));
-        points0.push_back(deCasteljau(v1, 0, grid_x_count, p_u).first);
+        std::vector<Eigen::Vector3f> points(spatial_data->control_mesh_nodes.begin() + i_y * (grid_x_count + 1), spatial_data->control_mesh_nodes.begin() + (i_y + 1) * (grid_x_count + 1));
+        DeCasteljau de_casteljau = DeCasteljau(points, p_u);
+        bezier_points_x.push_back(de_casteljau.calculate(0, grid_x_count));
     }
-    Point point = deCasteljau(points0, 0, grid_y_count, p_v).first;
-    Point tangent_0 = deCasteljau(points0, 0, grid_y_count, p_v).second;
+    DeCasteljau de_casteljau_y = DeCasteljau(bezier_points_x, p_v);
+    Eigen::Vector3f b0_y = de_casteljau_y.calculate(0, grid_y_count - 1);
+    Eigen::Vector3f b1_y = de_casteljau_y.calculate(1, grid_y_count - 1);
+    Eigen::Vector3f bezier_point = (p_v * b1_y) + ((1 - p_v) * b0_y);
+    Eigen::Vector3f tangent_xy = grid_y_count * (b1_y - b0_y);
 
-    PointList points1;
+    std::vector<Eigen::Vector3f> bezier_points_y;
     for (int i_x = 0; i_x <= grid_x_count; i_x++)
     {
-        std::vector<Point> v2;
+        std::vector<Eigen::Vector3f> points;
         for (int j = i_x; j < (grid_x_count + 1) * (grid_y_count + 1); j += (grid_x_count + 1))
         {
-            v2.push_back(spatial_data->control_mesh_nodes[j]);
+            points.push_back(spatial_data->control_mesh_nodes[j]);
         }
 
-        points1.push_back(deCasteljau(v2, 0, grid_y_count, p_v).first);
+        DeCasteljau de_casteljau = DeCasteljau(points, p_v);
+        bezier_points_y.push_back(de_casteljau.calculate(0, grid_y_count));
     }
-    Point tangent_1 = deCasteljau(points1, 0, grid_x_count, p_u).second;
-    Eigen::Vector3f t0;
-    t0 << tangent_0[0], tangent_0[1], tangent_0[2];
-    Eigen::Vector3f t1;
-    t1 << tangent_1[0], tangent_1[1], tangent_1[2];
-    Eigen::Vector3f p;
-    p << point[0], point[1], point[2];
+    DeCasteljau de_casteljau_x = DeCasteljau(bezier_points_y, p_u);
+    Eigen::Vector3f b0_x = de_casteljau_x.calculate(0, grid_x_count - 1);
+    Eigen::Vector3f b1_x = de_casteljau_x.calculate(1, grid_x_count - 1);
+    Eigen::Vector3f tangent_yx = grid_x_count * (b1_x - b0_x);
 
-    Eigen::Vector3f ef = (t1).cross((t0));
-    Eigen::Vector3f normal = (ef / ef.norm());
-    return std::pair<Point, Point>(point, {normal[0], normal[1], normal[2]});
+    Eigen::Vector3f cross_product = tangent_yx.cross(tangent_xy);
+    Eigen::Vector3f normal = (cross_product / cross_product.norm());
+    return {bezier_point, normal};
 }
 
 void updateControlMeshData()
@@ -138,7 +127,7 @@ void updateControlMeshData()
     if (spatial_data == nullptr)
         return;
 
-    PointList nodes;
+    std::vector<Eigen::Vector3f> nodes;
     std::vector<std::array<int, 2>> edges;
     float min_x = spatial_data->minima[0];
     float max_x = spatial_data->maxima[0];
@@ -152,7 +141,10 @@ void updateControlMeshData()
     {
         for (float x_i : wleofi)
         {
-            nodes.push_back(Point{x_i, y_i, weightedLeastSquares(x_i, y_i, control_points_radius).first});
+            Eigen::Matrix<double, 6, 1> coefficients = weightedLeastSquaresCoefficients(x_i, y_i, control_points_radius);
+            Eigen::Vector3f three_d_point;
+            three_d_point << x_i, y_i, weightedLeastSquares(x_i, y_i, coefficients);
+            nodes.push_back(three_d_point);
 
             if (i % (grid_x_count + 1) != grid_x_count)
             {
@@ -181,18 +173,18 @@ void createGrid()
     float min_y = spatial_data->minima[1];
     float max_y = spatial_data->maxima[1];
 
-    for (float i = 0; i <= grid_x_count; i++)
+    Eigen::VectorXf xs = Eigen::VectorXf::LinSpaced(grid_x_count + 1, min_x, max_x);
+    for (float x : xs)
     {
-        auto frac = 1 - (i / grid_x_count);
-        meshNodes.push_back(Point{frac * min_x + (1 - frac) * max_x, min_y, 0});
-        meshNodes.push_back(Point{frac * min_x + (1 - frac) * max_x, max_y, 0});
+        meshNodes.push_back(Point{x, min_y, 0});
+        meshNodes.push_back(Point{x, max_y, 0});
     }
 
-    for (float i = 0; i <= grid_y_count; i++)
+    Eigen::VectorXf ys = Eigen::VectorXf::LinSpaced(grid_y_count + 1, min_y, max_y);
+    for (float y : ys)
     {
-        auto frac = 1 - (i / grid_y_count);
-        meshNodes.push_back(Point{min_x, frac * min_y + (1 - frac) * max_y, 0});
-        meshNodes.push_back(Point{max_x, frac * min_y + (1 - frac) * max_y, 0});
+        meshNodes.push_back(Point{min_x, y, 0});
+        meshNodes.push_back(Point{max_x, y, 0});
     }
 
     int edge_count = meshNodes.size() / 2;
@@ -219,14 +211,14 @@ void createControlMesh()
 
 void createSurfaceMesh()
 {
-    PointList nodes;
+    std::vector<Eigen::Vector3f> nodes;
     int subdivided_grid_x_count = grid_x_count * (subdivision_count + 1) + 1;
     int subdivided_grid_y_count = grid_y_count * (subdivision_count + 1) + 1;
     Eigen::VectorXf xs = Eigen::VectorXf::LinSpaced(subdivided_grid_x_count, 0, 1);
     Eigen::VectorXf ys = Eigen::VectorXf::LinSpaced(subdivided_grid_y_count, 0, 1);
 
     std::vector<std::array<int, 3>> faces;
-    std::vector<std::array<float, 3>> vector_quantity;
+    std::vector<Eigen::Vector3f> vector_quantity;
 
     for (float y : ys)
     {
@@ -234,15 +226,18 @@ void createSurfaceMesh()
         {
             if (is_bezier)
             {
-                auto iwn = get_bezier_surface_point(x, y);
-                nodes.push_back(iwn.first);
-                vector_quantity.push_back(iwn.second);
+                std::pair<Eigen::Vector3f, Eigen::Vector3f> bezier_result = get_bezier_surface_point_and_normal(x, y);
+                nodes.push_back(bezier_result.first);
+                vector_quantity.push_back(bezier_result.second);
             }
             else
             {
-                auto iwn = weightedLeastSquares(x, y, mls_radius);
-                nodes.push_back({x, y, iwn.first});
-                vector_quantity.push_back(iwn.second);
+                Eigen::Matrix<double, 6, 1> coefficients = weightedLeastSquaresCoefficients(x, y, mls_radius);
+
+                Eigen::Vector3f point;
+                point << x, y, weightedLeastSquares(x, y, coefficients);
+                nodes.push_back(point);
+                vector_quantity.push_back(weightedLeastSquaresNormal(x, y, coefficients));
             }
         }
     }
@@ -265,7 +260,7 @@ void createSurfaceMesh()
         ->setSurfaceColor(kGreen)
         ->addVertexVectorQuantity("normals", vector_quantity)
         ->setVectorColor(kBlue)
-        ->setEnabled(true);
+        ->setEnabled(false);
 }
 
 void updateGrid()
@@ -339,7 +334,7 @@ void callback()
             try
             {
                 auto parse_result = parseOff(path.string());
-                std::vector<Point> points = std::get<0>(parse_result);
+                std::vector<Eigen::Vector3f> points = std::get<0>(parse_result);
                 std::vector<float> minima = std::get<2>(parse_result);
                 std::vector<float> maxima = std::get<3>(parse_result);
 
@@ -407,7 +402,6 @@ void callback()
         updateSurfaceMesh();
     if (ImGui::Checkbox("Show Surface Mesh", &show_surface_mesh))
         updateSurfaceMesh();
-    ImGui::Checkbox("Show Normals", &show_normals);
     if (ImGui::SliderInt("Subdivisions", &subdivision_count, 0, 9))
         updateSurfaceMesh();
     if (ImGui::SliderFloat("Radius (MLS only)", &mls_radius, 0.0f, 1.0f, "%.3f"))

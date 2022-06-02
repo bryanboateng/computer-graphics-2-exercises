@@ -5,7 +5,7 @@
 
 #include "typealiases.cpp"
 
-std::tuple<std::vector<Point>, std::vector<Normal>, std::vector<float>, std::vector<float>> parseOff(std::string const &filename)
+std::tuple<std::vector<Eigen::Vector3f>, std::vector<Eigen::Vector3f>, std::vector<float>, std::vector<float>> parseOff(std::string const &filename)
 {
     std::ifstream off_file(filename);
     if (off_file.is_open())
@@ -20,8 +20,8 @@ std::tuple<std::vector<Point>, std::vector<Normal>, std::vector<float>, std::vec
         {
             int vertex_count, face_count, edge_count;
             off_file >> vertex_count >> face_count >> edge_count;
-            std::vector<Point> points;
-            std::vector<Normal> normals;
+            std::vector<Eigen::Vector3f> points;
+            std::vector<Eigen::Vector3f> normals;
             float max_x, max_y, max_z = -10000;
             float min_x, min_y, min_z = 10000;
             for (int i = 0; i < vertex_count; ++i)
@@ -41,7 +41,9 @@ std::tuple<std::vector<Point>, std::vector<Normal>, std::vector<float>, std::vec
                 if (z < min_z)
                     min_z = z;
 
-                points.push_back(Point{x, y, z});
+                Eigen::Vector3f point;
+                point << x, y, z;
+                points.push_back(point);
             }
             off_file.close();
             return {points, normals, {min_x, min_y, min_z}, {max_x, max_y, max_z}};
