@@ -48,9 +48,9 @@ float wendland(float d)
     return std::pow((1 - d), 4) * (4 * d + 1);
 }
 
-float weightedLeastSquares(float p_u, float p_v)
+std::pair<float, Point> weightedLeastSquares(float p_u, float p_v, float radius)
 {
-    auto collected_points = spatial_data->kd_tree_2->collectInRadius(Point{p_u, p_v, 0}, control_points_radius);
+    auto collected_points = spatial_data->kd_tree_2->collectInRadius(Point{p_u, p_v, 0}, radius);
 
     Eigen::MatrixXf A = Eigen::MatrixXf::Zero(6, 6);
     Eigen::VectorXf b = Eigen::VectorXf::Zero(6);
@@ -70,7 +70,12 @@ float weightedLeastSquares(float p_u, float p_v)
     }
 
     Eigen::VectorXf coefficients = A.llt().solve(b);
-    return coefficients[0] + coefficients[1] * p_u + coefficients[2] * p_v + coefficients[3] * p_u * p_u + coefficients[4] * p_u * p_v + coefficients[5] * p_v * p_v;
+    float z = coefficients[0] + coefficients[1] * p_u + coefficients[2] * p_v + coefficients[3] * p_u * p_u + coefficients[4] * p_u * p_v + coefficients[5] * p_v * p_v;
+
+    Eigen::Vector3f wgeg;
+    wgeg << (-1) * (coefficients[1] + 2 * coefficients[3] * p_u + coefficients[4] * p_v), (-1) * (coefficients[2] + coefficients[4] * p_u + 2 * coefficients[5] * p_v), 1;
+    Eigen::Vector3f hwu = wgeg / wgeg.norm();
+    return std::pair<float, Point>(z, {hwu[0], hwu[1], hwu[2]});
 }
 
 std::pair<Point, Point> deCasteljau(PointList const &points, int i, int r, float u)
@@ -147,7 +152,7 @@ void updateControlMeshData()
     {
         for (float x_i : wleofi)
         {
-            nodes.push_back(Point{x_i, y_i, weightedLeastSquares(x_i, y_i)});
+            nodes.push_back(Point{x_i, y_i, weightedLeastSquares(x_i, y_i, control_points_radius).first});
 
             if (i % (grid_x_count + 1) != grid_x_count)
             {
@@ -227,9 +232,18 @@ void createSurfaceMesh()
     {
         for (float x : xs)
         {
-            auto iwn = get_bezier_surface_point(x, y);
-            nodes.push_back(iwn.first);
-            vector_quantity.push_back(iwn.second);
+            if (is_bezier)
+            {
+                auto iwn = get_bezier_surface_point(x, y);
+                nodes.push_back(iwn.first);
+                vector_quantity.push_back(iwn.second);
+            }
+            else
+            {
+                auto iwn = weightedLeastSquares(x, y, mls_radius);
+                nodes.push_back({x, y, iwn.first});
+                vector_quantity.push_back(iwn.second);
+            }
         }
     }
 
