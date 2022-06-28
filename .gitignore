@@ -6,3 +6,7 @@ homework-1/imgui.ini
 homework-1/.polyscope.ini
 cmake-build-debug/
 cmake-build-release/
+.polyscope.ini
+imgui.ini
+/CMakeFiles
+/_deps
