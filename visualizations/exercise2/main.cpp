@@ -335,6 +335,7 @@ void callback()
             {
                 auto parse_result = parseOff(path.string());
                 std::vector<Eigen::Vector3f> points = std::get<0>(parse_result);
+                std::vector<Eigen::Vector3f> normals = std::get<1>(parse_result);
                 std::vector<float> minima = std::get<2>(parse_result);
                 std::vector<float> maxima = std::get<3>(parse_result);
 
@@ -344,7 +345,8 @@ void callback()
                 // Create the polyscope geometry
                 polyscope::registerPointCloud("Points", points)
                     ->setPointRadius(0.0025)
-                    ->setPointColor(kOrange);
+                    ->setPointColor(kOrange)
+                    ->addVectorQuantity("normals", normals)->setEnabled(true);
                 updateGrid();
                 updateControlMeshData();
                 updateControlMesh();
@@ -433,7 +435,7 @@ int main(int argc, char **argv)
     // Options
     polyscope::options::groundPlaneMode = polyscope::GroundPlaneMode::ShadowOnly;
     polyscope::options::shadowBlurIters = 6;
-    polyscope::view::upDir = polyscope::UpDir::ZUp;
+    polyscope::view::upDir = polyscope::UpDir::YUp;
     // Initialize polyscope
     polyscope::init();
 
