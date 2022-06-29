@@ -22,23 +22,73 @@ bool show_surface_mesh = false;
 int subdivision_count = 0;
 float mls_radius = 0.1;
 
+template<typename T>
+struct matrix_hash : std::unary_function<T, size_t> {
+  std::size_t operator()(T const& matrix) const {
+    // Note that it is oblivious to the storage order of Eigen matrix (column- or
+    // row-major). It will give you the same hash value for two different matrices if they
+    // are the transpose of each other in different storage order.
+    size_t seed = 0;
+    for (size_t i = 0; i < (size_t) matrix.size(); ++i) {
+      auto elem = *(matrix.data() + i);
+      seed ^= std::hash<typename T::Scalar>()(elem) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+    }
+    return seed;
+  }
+};
+
 class SpatialData
 {
 public:
+    void BoundingBoxDiagonal();
     std::unique_ptr<KdTree2> kd_tree_2;
-    std::vector<float> minima;
-    std::vector<float> maxima;
-    SpatialData(std::vector<Eigen::Vector3f> const &points, std::vector<float> mins, std::vector<float> maxs)
+    Eigen::Vector3f minima;
+    Eigen::Vector3f maxima;
+    std::vector<Eigen::Vector3f> points;
+    std::vector<Eigen::Vector3f> normals;
+    std::vector<Eigen::Vector3f> points_offset_pos;
+    std::vector<Eigen::Vector3f> points_offset_neg;
+    std::unordered_map<Eigen::Vector3f, double, matrix_hash<Eigen::Vector3f>> function_map;
+    double boundingbox_diagonal;
+    double alpha;
+    SpatialData(std::vector<Eigen::Vector3f> const &pts, Eigen::Vector3f mins, Eigen::Vector3f maxs, std::vector<Eigen::Vector3f> const &norms)
     {
+        points = pts;
+        normals = norms;
         kd_tree_2 = std::make_unique<KdTree2>(points);
-        minima = std::move(mins);
-        maxima = std::move(maxs);
+        minima << std::move(mins);
+        maxima << std::move(maxs);
+        boundingbox_diagonal = (maxima - minima).norm();
+        alpha = 0.01 *boundingbox_diagonal;
     }
     std::vector<Eigen::Vector3f> control_mesh_nodes;
     std::vector<std::array<int, 2>> control_mesh_edges;
+    void computeOffsetPoints();
 };
 
+void SpatialData::computeOffsetPoints()
+{
+    for(int i = 0; i < (int) points.size(); ++i){
+        points_offset_pos.push_back(points[i] + normals[i].normalized() * alpha);
+        points_offset_neg.push_back(points[i] - normals[i].normalized() * alpha);
+        function_map[points[i]] = 0;
+        function_map[points_offset_pos[i]] = alpha;
+        function_map[points_offset_neg[i]] = -1.;
+        polyscope::registerPointCloud("Points2", points_offset_pos)
+                    ->setPointRadius(0.0025)
+                    ->setPointColor(kGreen);
+        polyscope::registerPointCloud("Points3", points_offset_neg)
+                    ->setPointRadius(0.0025)
+                    ->setPointColor(kRed);
+    }
+    printf("%f\n", function_map[points[0]]);
+    printf("%f\n", function_map[points_offset_neg[0]]);
+
+}
+
 std::unique_ptr<SpatialData> spatial_data;
+
+
 
 double wendland(double d)
 {
@@ -121,6 +171,7 @@ std::pair<Eigen::Vector3f, Eigen::Vector3f> get_bezier_surface_point_and_normal(
     Eigen::Vector3f normal = (cross_product / cross_product.norm());
     return {bezier_point, normal};
 }
+
 
 void updateControlMeshData()
 {
@@ -336,21 +387,22 @@ void callback()
                 auto parse_result = parseOff(path.string());
                 std::vector<Eigen::Vector3f> points = std::get<0>(parse_result);
                 std::vector<Eigen::Vector3f> normals = std::get<1>(parse_result);
-                std::vector<float> minima = std::get<2>(parse_result);
-                std::vector<float> maxima = std::get<3>(parse_result);
+                Eigen::Vector3f minima = std::get<2>(parse_result);
+                Eigen::Vector3f maxima = std::get<3>(parse_result);
 
                 // Build spatial data structure
-                spatial_data = std::make_unique<SpatialData>(points, minima, maxima);
+                spatial_data = std::make_unique<SpatialData>(points, minima, maxima, normals);
 
                 // Create the polyscope geometry
                 polyscope::registerPointCloud("Points", points)
                     ->setPointRadius(0.0025)
-                    ->setPointColor(kOrange)
-                    ->addVectorQuantity("normals", normals)->setEnabled(true);
+                    ->setPointColor(kOrange)->addVectorQuantity("normals", normals)->setEnabled(true);
                 updateGrid();
                 updateControlMeshData();
                 updateControlMesh();
                 updateSurfaceMesh();
+                spatial_data->computeOffsetPoints();
+
             }
             catch (const std::invalid_argument &e)
             {
