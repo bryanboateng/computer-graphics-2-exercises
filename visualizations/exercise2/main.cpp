@@ -13,9 +13,11 @@
 
 int grid_x_count = 10;
 int grid_y_count = 10;
+int grid_z_count = 10;
 float control_points_radius = 0.1;
 bool show_grid = false;
 bool show_control_mesh = false;
+bool show_grid_points = false;
 
 int is_bezier = 1; // 0 -> mls surface
 bool show_surface_mesh = false;
@@ -46,6 +48,7 @@ public:
     Eigen::Vector3f maxima;
     std::vector<Eigen::Vector3f> points;
     std::vector<Eigen::Vector3f> normals;
+    std::vector<Eigen::Vector3f> grid_points;
     std::vector<Eigen::Vector3f> points_offset_pos;
     std::vector<Eigen::Vector3f> points_offset_neg;
     std::unordered_map<Eigen::Vector3f, double, matrix_hash<Eigen::Vector3f>> function_map;
@@ -60,10 +63,12 @@ public:
         maxima << std::move(maxs);
         boundingbox_diagonal = (maxima - minima).norm();
         alpha = 0.01 *boundingbox_diagonal;
+        CreatePointGrid();
     }
     std::vector<Eigen::Vector3f> control_mesh_nodes;
     std::vector<std::array<int, 2>> control_mesh_edges;
     void computeOffsetPoints();
+    void CreatePointGrid();
 };
 
 void SpatialData::computeOffsetPoints()
@@ -73,7 +78,7 @@ void SpatialData::computeOffsetPoints()
         points_offset_neg.push_back(points[i] - normals[i].normalized() * alpha);
         function_map[points[i]] = 0;
         function_map[points_offset_pos[i]] = alpha;
-        function_map[points_offset_neg[i]] = -1.;
+        function_map[points_offset_neg[i]] = -alpha;
         polyscope::registerPointCloud("Points2", points_offset_pos)
                     ->setPointRadius(0.0025)
                     ->setPointColor(kGreen);
@@ -81,8 +86,32 @@ void SpatialData::computeOffsetPoints()
                     ->setPointRadius(0.0025)
                     ->setPointColor(kRed);
     }
-    printf("%f\n", function_map[points[0]]);
-    printf("%f\n", function_map[points_offset_neg[0]]);
+
+}
+
+void SpatialData::CreatePointGrid(){
+    float min_x = minima[0];
+    float max_x = maxima[0];
+    float min_y = minima[1];
+    float max_y = maxima[1];
+    float min_z = minima[2];
+    float max_z = maxima[2];
+
+    Eigen::VectorXf grid_x = Eigen::VectorXf::LinSpaced(grid_x_count + 1, min_x, max_x);
+    Eigen::VectorXf grid_y = Eigen::VectorXf::LinSpaced(grid_y_count + 1, min_y, max_y);
+    Eigen::VectorXf grid_z = Eigen::VectorXf::LinSpaced(grid_z_count + 1, min_z, max_z);
+
+    for(float z : grid_z)
+    {
+        for (float y : grid_y)
+        {
+            for (float x : grid_x)
+            {
+                    Eigen::Vector3f grid_point(x,y,z);
+                    grid_points.push_back(grid_point);
+            }
+        }
+    }
 
 }
 
@@ -95,40 +124,35 @@ double wendland(double d)
     return std::pow((1 - d), 4) * (4 * d + 1);
 }
 
-float weightedLeastSquares(float u, float v, Eigen::Matrix<double, 6, 1> coefficients)
+float weightedLeastSquares(Eigen::Vector3f point, Eigen::Matrix<double, 1, 1> coefficients)
 {
-    return coefficients[0] + coefficients[1] * u + coefficients[2] * v + coefficients[3] * u * u + coefficients[4] * u * v + coefficients[5] * v * v;
+    return coefficients[0];
 }
 
-Eigen::Vector3f weightedLeastSquaresNormal(float u, float v, Eigen::Matrix<double, 6, 1> coefficients)
+Eigen::Vector3f weightedLeastSquaresNormal(float u, float v, Eigen::Matrix<double, 1, 1> coefficients)
 {
     Eigen::Vector3f derivative_cross_product;
-    derivative_cross_product << (-1) * (coefficients[1] + 2 * coefficients[3] * u + coefficients[4] * v), (-1) * (coefficients[2] + coefficients[4] * u + 2 * coefficients[5] * v), 1;
+    derivative_cross_product <<  1,1,1;
     return derivative_cross_product / derivative_cross_product.norm();
 }
 
-Eigen::Matrix<double, 6, 1> weightedLeastSquaresCoefficients(float u, float v, float radius)
+Eigen::Matrix<double, 1, 1> weightedLeastSquaresCoefficients(Eigen::Vector3f point, float radius)
 {
-    Eigen::Vector2f p;
-    p << u, v;
-    std::vector<Eigen::Vector3f> collected_points = spatial_data->kd_tree_2->collectInRadius(p, radius);
-
-    Eigen::Matrix<double, 6, 6> A = Eigen::Matrix<double, 6, 6>::Zero();
-    Eigen::Matrix<double, 6, 1> b = Eigen::Matrix<double, 6, 1>::Zero();
-    Eigen::Vector2d d_p = p.cast<double>();
+    std::vector<Eigen::Vector3f> collected_points = spatial_data->kd_tree_2->collectInRadius(point, radius);
+    Eigen::Matrix<double, 1, 1> A = Eigen::Matrix<double, 1, 1>::Zero();
+    Eigen::Matrix<double, 1, 1> b = Eigen::Matrix<double, 1, 1>::Zero();
     for (Eigen::Vector3f collected_point : collected_points)
     {
         Eigen::Vector3d d_collected_point = collected_point.cast<double>();
-        double wendland_value = wendland((d_collected_point.head<2>() - d_p).norm());
-        double u_i = d_collected_point[0];
-        double v_i = d_collected_point[1];
+        Eigen::Vector3d d_point = point.cast<double>();
+        double wendland_value = wendland((d_collected_point - d_point).norm());
 
-        Eigen::Matrix<double, 6, 1> base;
-        base << 1, u_i, v_i, u_i * u_i, u_i * v_i, v_i * v_i;
+        Eigen::Matrix<double, 1, 1> base;
+        base << 1;
 
-        Eigen::Matrix<double, 6, 6> A_i = (base * base.transpose()) * wendland_value;
+        Eigen::Matrix<double, 1, 1> A_i = (base * base.transpose()) * wendland_value;
         A += A_i;
-        Eigen::Matrix<double, 6, 1> b_i = base * collected_point[2] * wendland_value;
+        Eigen::Matrix<double, 1, 1> b_i = base * spatial_data->function_map[collected_point] * wendland_value;
         b += b_i;
     }
 
@@ -184,30 +208,36 @@ void updateControlMeshData()
     float max_x = spatial_data->maxima[0];
     float min_y = spatial_data->minima[1];
     float max_y = spatial_data->maxima[1];
+    float min_z = spatial_data->minima[2];
+    float max_z = spatial_data->maxima[2];
 
-    Eigen::VectorXf wleofi = Eigen::VectorXf::LinSpaced(grid_x_count + 1, min_x, max_x);
-    Eigen::VectorXf ghwerhe = Eigen::VectorXf::LinSpaced(grid_y_count + 1, min_y, max_y);
+    Eigen::VectorXf grid_x = Eigen::VectorXf::LinSpaced(grid_x_count + 1, min_x, max_x);
+    Eigen::VectorXf grid_y = Eigen::VectorXf::LinSpaced(grid_y_count + 1, min_y, max_y);
+    Eigen::VectorXf grid_z = Eigen::VectorXf::LinSpaced(grid_z_count + 1, min_z, max_z);
     int i = 0;
-    for (float y_i : ghwerhe)
-    {
-        for (float x_i : wleofi)
+    for(float z_i : grid_z){
+        for (float y_i : grid_y)
         {
-            Eigen::Matrix<double, 6, 1> coefficients = weightedLeastSquaresCoefficients(x_i, y_i, control_points_radius);
-            Eigen::Vector3f three_d_point;
-            three_d_point << x_i, y_i, weightedLeastSquares(x_i, y_i, coefficients);
-            nodes.push_back(three_d_point);
-
-            if (i % (grid_x_count + 1) != grid_x_count)
+            for (float x_i : grid_x)
             {
-                edges.push_back({i, i + 1});
-            }
+                Eigen::Vector3f grid_point(x_i, y_i, z_i);
+                Eigen::Matrix<double, 1, 1> coefficients = weightedLeastSquaresCoefficients(grid_point, control_points_radius);
+                Eigen::Vector3f three_d_point;
+                three_d_point << grid_point;
+                nodes.push_back(three_d_point);
 
-            int vertical_neighbor_index = i + grid_x_count + 1;
-            if (vertical_neighbor_index < ((grid_x_count + 1) * (grid_y_count + 1)))
-            {
-                edges.push_back({i, vertical_neighbor_index});
+                if (i % (grid_x_count + 1) != grid_x_count)
+                {
+                    edges.push_back({i, i + 1});
+                }
+
+                int vertical_neighbor_index = i + grid_x_count + 1;
+                if (vertical_neighbor_index < ((grid_x_count + 1) * (grid_y_count + 1)))
+                {
+                    edges.push_back({i, vertical_neighbor_index});
+                }
+                i++;
             }
-            i++;
         }
     }
     spatial_data->control_mesh_nodes = nodes;
@@ -265,30 +295,27 @@ void createSurfaceMesh()
     std::vector<Eigen::Vector3f> nodes;
     int subdivided_grid_x_count = grid_x_count * (subdivision_count + 1) + 1;
     int subdivided_grid_y_count = grid_y_count * (subdivision_count + 1) + 1;
+    int subdivided_grid_z_count = grid_z_count * (subdivision_count + 1) + 1;
     Eigen::VectorXf xs = Eigen::VectorXf::LinSpaced(subdivided_grid_x_count, 0, 1);
     Eigen::VectorXf ys = Eigen::VectorXf::LinSpaced(subdivided_grid_y_count, 0, 1);
+    Eigen::VectorXf zs = Eigen::VectorXf::LinSpaced(subdivided_grid_z_count, 0, 1);
 
     std::vector<std::array<int, 3>> faces;
     std::vector<Eigen::Vector3f> vector_quantity;
 
-    for (float y : ys)
+    for(float z : zs)
     {
-        for (float x : xs)
+        for (float y : ys)
         {
-            if (is_bezier)
+            for (float x : xs)
             {
-                std::pair<Eigen::Vector3f, Eigen::Vector3f> bezier_result = get_bezier_surface_point_and_normal(x, y);
-                nodes.push_back(bezier_result.first);
-                vector_quantity.push_back(bezier_result.second);
-            }
-            else
-            {
-                Eigen::Matrix<double, 6, 1> coefficients = weightedLeastSquaresCoefficients(x, y, mls_radius);
+                    Eigen::Vector3f grid_point(x,y,z);
+                    Eigen::Matrix<double, 1, 1> coefficients = weightedLeastSquaresCoefficients(grid_point, mls_radius);
 
-                Eigen::Vector3f point;
-                point << x, y, weightedLeastSquares(x, y, coefficients);
-                nodes.push_back(point);
-                vector_quantity.push_back(weightedLeastSquaresNormal(x, y, coefficients));
+                    Eigen::Vector3f point;
+                    point << weightedLeastSquares(grid_point, coefficients);
+                    nodes.push_back(point);
+                    vector_quantity.push_back(weightedLeastSquaresNormal(x, y, coefficients));
             }
         }
     }
@@ -372,6 +399,24 @@ void updateSurfaceMesh()
     }
 }
 
+void updatePointGrid(){
+        if (spatial_data == nullptr)
+            return;
+        if (show_grid_points){
+            polyscope::registerPointCloud("PointGrid", spatial_data->grid_points)
+                ->setPointRadius(0.0025)
+                ->setPointColor(kBlue);
+        }
+        else{
+            if (polyscope::hasPointCloud("PointGrid"))
+        {
+            polyscope::removePointCloud("PointGrid");
+        }
+        }
+
+
+}
+
 void callback()
 {
     if (ImGui::Button("Load Points"))
@@ -441,25 +486,27 @@ void callback()
         updateControlMesh();
         updateSurfaceMesh();
     }
-    if (ImGui::Checkbox("Show Grid", &show_grid))
-        updateGrid();
-    if (ImGui::Checkbox("Show Control Mesh", &show_control_mesh))
-    {
-        updateControlMesh();
-    }
-    ImGui::Text("Surface");
-    ImGui::Separator();
-    if (ImGui::RadioButton("Beziér Surface", &is_bezier, 1))
-        updateSurfaceMesh();
-    ImGui::SameLine();
-    if (ImGui::RadioButton("MLS Surface", &is_bezier, 0))
-        updateSurfaceMesh();
-    if (ImGui::Checkbox("Show Surface Mesh", &show_surface_mesh))
-        updateSurfaceMesh();
-    if (ImGui::SliderInt("Subdivisions", &subdivision_count, 0, 9))
-        updateSurfaceMesh();
-    if (ImGui::SliderFloat("Radius (MLS only)", &mls_radius, 0.0f, 1.0f, "%.3f"))
-        updateSurfaceMesh();
+    // if (ImGui::Checkbox("Show Grid", &show_grid))
+    //     updateGrid();
+    // if (ImGui::Checkbox("Show Control Mesh", &show_control_mesh))
+    // {
+    //     updateControlMesh();
+    // }
+    // ImGui::Text("Surface");
+    // ImGui::Separator();
+    // if (ImGui::RadioButton("Beziér Surface", &is_bezier, 1))
+    //     updateSurfaceMesh();
+    // ImGui::SameLine();
+    // if (ImGui::RadioButton("MLS Surface", &is_bezier, 0))
+    //     updateSurfaceMesh();
+    // if (ImGui::Checkbox("Show Surface Mesh", &show_surface_mesh))
+    //     updateSurfaceMesh();
+    // if (ImGui::SliderInt("Subdivisions", &subdivision_count, 0, 9))
+    //     updateSurfaceMesh();
+    // if (ImGui::SliderFloat("Radius (MLS only)", &mls_radius, 0.0f, 1.0f, "%.3f"))
+    //     updateSurfaceMesh();
+    if (ImGui::Checkbox("Show Grid Points", &show_grid_points))
+        updatePointGrid();
 }
 
 int main(int argc, char **argv)

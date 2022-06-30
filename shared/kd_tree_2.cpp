@@ -7,7 +7,7 @@
 
 const int kMaxBucketSize = 400;
 
-static float euclideanDistance2(Eigen::Vector2f const &p1, Eigen::Vector2f const &p2)
+static float euclideanDistance2(Eigen::Vector3f const &p1, Eigen::Vector3f const &p2)
 {
     return (p1-p2).norm();
 }
@@ -48,7 +48,7 @@ public:
         return m_points;
     }
 
-    [[nodiscard]] virtual std::vector<Eigen::Vector3f> collectInRadius(Eigen::Vector2f p, float radius) const
+    [[nodiscard]] virtual std::vector<Eigen::Vector3f> collectInRadius(Eigen::Vector3f p, float radius) const
     {
         std::vector<Eigen::Vector3f> list;
         collectInRadiusKnn(&list, root, p, radius, 0);
@@ -62,7 +62,7 @@ private:
         {
             return nullptr;
         }
-        int axis = depth % 2;
+        int axis = depth % 3;
 
         std::vector<float> d;
         for(Eigen::Vector3f const &p : *pts) {
@@ -102,7 +102,7 @@ private:
         return retVal;
     }
 
-    static void collectInRadiusKnn(std::vector<Eigen::Vector3f> *list, KdTreeNode2 *cursor, Eigen::Vector2f const &p, float radius, int axis)
+    static void collectInRadiusKnn(std::vector<Eigen::Vector3f> *list, KdTreeNode2 *cursor, Eigen::Vector3f const &p, float radius, int axis)
     {
         if (cursor != nullptr)
         {
@@ -110,7 +110,7 @@ private:
             {
                 for (Eigen::Vector3f & i : cursor->bucket)
                 {
-                    float distance = euclideanDistance2(p, i.head<2>());
+                    float distance = euclideanDistance2(p, i);
                     if (distance <= radius)
                     {
                         list->push_back(i);
@@ -135,8 +135,9 @@ private:
             {
                 float x = (axis == 0) ? cursor->median : p[0];
                 float y = (axis == 1) ? cursor->median : p[1];
-                Eigen::Vector2f v;
-                v << x, y;
+                float z = (axis == 2) ? cursor->median : p[2];
+                Eigen::Vector3f v;
+                v << x, y, z; 
                 float distance = euclideanDistance2(p, v);
                 bool compareValue = (nonMatchingSide == cursor->left) ? distance <= radius : distance < radius;
                 if (compareValue)
