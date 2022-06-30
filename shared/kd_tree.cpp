@@ -6,13 +6,18 @@
 
 const int kMaxBucketSize = 400;
 
-static float euclideanDistance(Point const &p1, Point const &p2)
+static float euclideanDistance(Eigen::Vector3f const &p1, Eigen::Vector3f const &p2)
 {
-    float dx = p1[0] - p2[0];
-    float dy = p1[1] - p2[1];
-    float dz = p1[2] - p2[2];
-    return std::sqrt(dx * dx + dy * dy + dz * dz);
+    return (p1-p2).norm();
 }
+
+
+struct Compare {
+    bool operator()(std::pair<float, Eigen::Vector3f> const& p1, std::pair<float, Eigen::Vector3f> const& p2)
+    {
+        return p1.first < p2.first;
+    }
+};
 
 class KdTreeNode
 {
@@ -21,9 +26,9 @@ public:
     KdTreeNode *left;
     KdTreeNode *right;
     KdTreeNode *parent = nullptr;
-    PointList bucket;
+    std::vector<Eigen::Vector3f> bucket;
     int depth;
-    KdTreeNode(float p, KdTreeNode *l, KdTreeNode *r, PointList b, int d)
+    KdTreeNode(float p, KdTreeNode *l, KdTreeNode *r, std::vector<Eigen::Vector3f> b, int d)
     {
         median = p;
         left = l;
@@ -37,22 +42,22 @@ class KdTree
 {
 public:
     KdTreeNode *root;
-    KdTree(PointList const &points)
-        : m_points(points)
+    KdTree(const std::vector<Eigen::Vector3f> &points)
+        : m_points(std::move(points))
     {
         root = build_tree_linear_median_search(&m_points, 0);
     }
 
     virtual ~KdTree() = default;
 
-    PointList const &getPoints() const
+    [[nodiscard]] std::vector<Eigen::Vector3f> const &getPoints() const
     {
         return m_points;
     }
 
-    virtual std::vector<Point> collectInRadius(const Point &p, float radius) const
+    virtual std::vector<Eigen::Vector3f> collectInRadius(const Eigen::Vector3f &p, float radius) const
     {
-        PointList list;
+        std::vector<Eigen::Vector3f> list;
         collectInRadiusKnn(&list, root, p, radius, 0);
         return list;
     }
@@ -64,9 +69,9 @@ public:
      *  -> make sure to check all buckets where the minimum distance is less than
      *     the furthest point in the candidates list.
      * */
-    virtual PointList collectKNearest(const Point &p, unsigned int k) const
+    virtual std::vector<Eigen::Vector3f> collectKNearest(const Eigen::Vector3f &p, unsigned int k) const
     {
-        PointList result;
+        std::vector<Eigen::Vector3f> result;
         if (k == 0)
         {
             return result;
@@ -77,16 +82,16 @@ public:
         collectDistanceToBuckets(root, p, &bucketDistances);
         std::sort(bucketDistances.begin(), bucketDistances.end(), [=](std::pair<KdTreeNode *, float> &a, std::pair<KdTreeNode *, float> &b)
                   { return a.second < b.second; });
-        std::priority_queue<std::pair<float, Point>> queue;
+        std::priority_queue<std::pair<float, Eigen::Vector3f>, std::vector<std::pair<float, Eigen::Vector3f>>, Compare> queue;
         size_t position = 0;
         while (queue.size() < k && position < bucketDistances.size())
         {
-            PointList bucket = bucketDistances[position].first->bucket;
-            PointList nClosest = collectNClosest(bucket, p, k - queue.size());
-            for (Point entry : nClosest)
+            std::vector<Eigen::Vector3f> bucket = bucketDistances[position].first->bucket;
+            std::vector<Eigen::Vector3f> nClosest = collectNClosest(bucket, p, k - queue.size());
+            for (Eigen::Vector3f entry : nClosest)
             {
                 float distance = euclideanDistance(p, entry);
-                queue.push(std::pair<float, Point>(distance, entry));
+                queue.push(std::pair<float, Eigen::Vector3f>(distance, entry));
             }
             if (bucket.size() == nClosest.size())
             {
@@ -101,17 +106,17 @@ public:
             {
                 break;
             }
-            PointList bucket = bucketDistances[position].first->bucket;
-            PointList nClosest = collectCloserThan(bucket, p, maxDistance, k);
+            std::vector<Eigen::Vector3f> bucket = bucketDistances[position].first->bucket;
+            std::vector<Eigen::Vector3f> nClosest = collectCloserThan(bucket, p, maxDistance, k);
 
-            for (auto item : nClosest)
+            for (Eigen::Vector3f item : nClosest)
             {
                 float distance = euclideanDistance(p, item);
-                auto maxValue = queue.top();
+                std::pair<float, Eigen::Vector3f> maxValue = queue.top();
                 if (distance < maxValue.first)
                 {
                     queue.pop();
-                    queue.push(std::pair<float, Point>(distance, item));
+                    queue.push(std::pair<float, Eigen::Vector3f>(distance, item));
                 }
                 else
                 {
@@ -129,18 +134,24 @@ public:
     }
 
 private:
-    KdTreeNode *build_tree_linear_median_search(std::vector<Point> *pts, int depth)
+    KdTreeNode *build_tree_linear_median_search(std::vector<Eigen::Vector3f> *pts, int depth)
     {
         if (pts->size() == 0)
         {
             return NULL;
         }
         int axis = depth % 3;
-        float median = median_search::search(*pts, axis, pts->size() / 2);
-        std::vector<Point> left, right;
+
+        std::vector<float> d;
+        for(Eigen::Vector3f const &p : *pts) {
+            d.push_back(p[axis]);
+        }
+
+        float median = median_search::search(d, pts->size() / 2);
+        std::vector<Eigen::Vector3f> left, right;
         KdTreeNode *leftChild = nullptr;
         KdTreeNode *rightChild = nullptr;
-        PointList bucket;
+        std::vector<Eigen::Vector3f> bucket;
         if (pts->size() > kMaxBucketSize)
         {
             for (std::size_t i = 0; i < pts->size(); ++i)
@@ -169,13 +180,13 @@ private:
         return retVal;
     }
 
-    virtual PointList collectNClosest(const PointList &list, const Point &p, size_t n) const
+    virtual std::vector<Eigen::Vector3f> collectNClosest(const std::vector<Eigen::Vector3f> &list, const Eigen::Vector3f &p, size_t n) const
     {
         if (n >= list.size())
         {
             return list;
         }
-        PointList result;
+        std::vector<Eigen::Vector3f> result;
         std::vector<std::pair<int, float>> distances; // index+distance
         for (size_t i = 0; i < list.size(); i++)
         {
@@ -191,9 +202,9 @@ private:
         return result;
     }
 
-    virtual PointList collectCloserThan(const PointList &list, const Point &p, float maxDistance, size_t maxPoints) const
+    virtual std::vector<Eigen::Vector3f> collectCloserThan(const std::vector<Eigen::Vector3f> &list, const Eigen::Vector3f &p, float maxDistance, size_t maxPoints) const
     {
-        PointList result;
+        std::vector<Eigen::Vector3f> result;
         std::vector<std::pair<int, float>> distances;
         for (size_t i = 0; i < list.size(); i++)
         {
@@ -212,7 +223,7 @@ private:
         return result;
     }
 
-    void collectDistanceToBuckets(KdTreeNode *cursor, const Point &p, std::vector<std::pair<KdTreeNode *, float>> *leafDistances) const
+    void collectDistanceToBuckets(KdTreeNode *cursor, const Eigen::Vector3f &p, std::vector<std::pair<KdTreeNode *, float>> *leafDistances) const
     {
         if (cursor != nullptr)
         {
@@ -240,7 +251,7 @@ private:
                         float x = (splitAxis == 0) ? splitMedian : p[0];
                         float y = (splitAxis == 1) ? splitMedian : p[1];
                         float z = (splitAxis == 2) ? splitMedian : p[2];
-                        float distance = euclideanDistance(p, Point{x, y, z});
+                        float distance = euclideanDistance(p, Eigen::Vector3f{x, y, z});
                     }
                     leafDistances->push_back(std::pair(cursor, distance));
                 }
@@ -250,7 +261,7 @@ private:
         }
     }
 
-    static void collectInRadiusKnn(PointList *list, KdTreeNode *cursor, const Point &p, float radius, int axis)
+    static void collectInRadiusKnn(std::vector<Eigen::Vector3f> *list, KdTreeNode *cursor, const Eigen::Vector3f &p, float radius, int axis)
     {
         if (cursor != nullptr)
         {
@@ -284,7 +295,7 @@ private:
                 float x = (axis == 0) ? cursor->median : p[0];
                 float y = (axis == 1) ? cursor->median : p[1];
                 float z = (axis == 2) ? cursor->median : p[2];
-                float distance = euclideanDistance(p, Point{x, y, z});
+                float distance = euclideanDistance(p, Eigen::Vector3f{x, y, z});
                 bool compareValue = (nonMatchingSide == cursor->left) ? distance <= radius : distance < radius;
                 if (compareValue)
                 {
@@ -295,5 +306,5 @@ private:
         return;
     }
 
-    PointList m_points;
+    std::vector<Eigen::Vector3f> m_points;
 };
