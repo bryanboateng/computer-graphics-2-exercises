@@ -18,6 +18,7 @@ float control_points_radius = 0.1;
 bool show_grid = false;
 bool show_control_mesh = false;
 bool show_grid_points = false;
+bool show_grid_points_fv = false;
 
 int is_bezier = 1; // 0 -> mls surface
 bool show_surface_mesh = false;
@@ -69,16 +70,19 @@ public:
     std::vector<std::array<int, 2>> control_mesh_edges;
     void computeOffsetPoints();
     void CreatePointGrid();
+    void ComputeFunctionValues();
 };
 
 void SpatialData::computeOffsetPoints()
 {
     for(int i = 0; i < (int) points.size(); ++i){
-        points_offset_pos.push_back(points[i] + normals[i].normalized() * alpha);
-        points_offset_neg.push_back(points[i] - normals[i].normalized() * alpha);
+        Eigen::Vector3f vec_pos(points[i] + normals[i].normalized() * alpha);
+        Eigen::Vector3f vec_neg(points[i] - normals[i].normalized() * alpha);
+        points_offset_pos.push_back(vec_pos);
+        points_offset_neg.push_back(vec_neg);
         function_map[points[i]] = 0;
-        function_map[points_offset_pos[i]] = alpha;
-        function_map[points_offset_neg[i]] = -alpha;
+        function_map[vec_pos] = alpha;
+        function_map[vec_neg] = -alpha;
         polyscope::registerPointCloud("Points2", points_offset_pos)
                     ->setPointRadius(0.0025)
                     ->setPointColor(kGreen);
@@ -115,7 +119,11 @@ void SpatialData::CreatePointGrid(){
 
 }
 
+
+
 std::unique_ptr<SpatialData> spatial_data;
+
+
 
 
 
@@ -157,6 +165,22 @@ Eigen::Matrix<double, 1, 1> weightedLeastSquaresCoefficients(Eigen::Vector3f poi
     }
 
     return A.llt().solve(b);
+}
+
+void ComputeFunctionValues(){
+    std::vector<std::array<double, 3>> colors;
+
+    for(auto point : spatial_data->grid_points){
+        double func_val = weightedLeastSquaresCoefficients(point, mls_radius)[0];
+        spatial_data->function_map[point] = func_val;
+        if(func_val <= 0){
+            colors.push_back({255.,0.,0.});
+        }
+        else{
+             colors.push_back({0.,255.,0.});;
+        }
+    }
+    polyscope::getPointCloud("PointGrid")->addColorQuantity("Color Values", colors);
 }
 
 std::pair<Eigen::Vector3f, Eigen::Vector3f> get_bezier_surface_point_and_normal(float p_u, float p_v)
@@ -507,6 +531,8 @@ void callback()
     //     updateSurfaceMesh();
     if (ImGui::Checkbox("Show Grid Points", &show_grid_points))
         updatePointGrid();
+    if (ImGui::Checkbox("Show Grid Points Function Values", &show_grid_points_fv))
+        ComputeFunctionValues();
 }
 
 int main(int argc, char **argv)
