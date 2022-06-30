@@ -2,7 +2,7 @@
 
 #include "../../shared/colors.cpp"
 #include "../../shared/de_casteljau.cpp"
-#include "../../shared/kd_tree_2.cpp"
+#include "../../shared/kd_tree.cpp"
 #include "../../shared/off_file_parser.cpp"
 #include "../../shared/typealiases.cpp"
 #include "args/args.hxx"
@@ -14,13 +14,15 @@
 class SpatialData
 {
 public:
-    std::unique_ptr<KdTree2> kd_tree_2;
+    std::unique_ptr<KdTree> kd_tree;
+    std::vector<Eigen::Vector3f> points;
     std::vector<Eigen::Vector3f> normals;
     std::vector<float> minima;
     std::vector<float> maxima;
-    SpatialData(std::vector<Eigen::Vector3f> const &points, std::vector<Eigen::Vector3f> const &norms, std::vector<float> mins, std::vector<float> maxs)
+    SpatialData(std::vector<Eigen::Vector3f> const &pts, std::vector<Eigen::Vector3f> const &norms, std::vector<float> mins, std::vector<float> maxs)
     {
-        kd_tree_2 = std::make_unique<KdTree2>(points);
+        kd_tree = std::make_unique<KdTree>(pts);
+        points = pts;
         normals = norms;
         minima = std::move(mins);
         maxima = std::move(maxs);
@@ -30,6 +32,69 @@ public:
 };
 
 std::unique_ptr<SpatialData> spatial_data;
+
+bool pointIsNearestToOtherPoint(const Eigen::Vector3f &point1, const Eigen::Vector3f &point2)
+{
+    Eigen::Vector3f nearestPoint = spatial_data->kd_tree->collectKNearest(point1, 1)[0];
+    return nearestPoint == point2;
+}
+
+Eigen::Vector3f calculateOffsetPoint(
+    const Eigen::Vector3f &point,
+    const Eigen::Vector3f &normal,
+    float startingAlpha,
+    bool isPositiveDirection)
+{
+    float alpha = startingAlpha;
+    float factor = isPositiveDirection ? 1 : -1;
+
+    Eigen::Vector3f offsetPoint = point + (factor * alpha * normal);
+    while (!pointIsNearestToOtherPoint(offsetPoint, point))
+    {
+        alpha = alpha / 2;
+        offsetPoint = point + (factor * alpha * normal);
+    }
+    return offsetPoint;
+}
+
+void createOffsetPoints()
+{
+    std::vector<Eigen::Vector3f> positive;
+    std::vector<Eigen::Vector3f> negative;
+    std::vector<float> p1 = spatial_data->minima;
+    std::vector<float> p2 = spatial_data->maxima;
+    float dx = p1[0] - p2[0];
+    float dy = p1[1] - p2[1];
+    float dz = p1[2] - p2[2];
+    float starting_alpha = 0.01 * std::sqrt(dx * dx + dy * dy + dz * dz) * 1.2;
+    for (size_t i = 0; i < spatial_data->points.size(); i++)
+    {
+        Eigen::Vector3f point = spatial_data->points[i];
+        Eigen::Vector3f normal = spatial_data->normals[i].normalized();
+        Eigen::Vector3f positive_offset_point = calculateOffsetPoint(
+            point,
+            normal,
+            starting_alpha,
+            true);
+        Eigen::Vector3f negative_offset_point = calculateOffsetPoint(
+            point,
+            normal,
+            starting_alpha,
+            false);
+        positive.push_back(positive_offset_point);
+        negative.push_back(negative_offset_point);
+    }
+
+    polyscope::registerPointCloud("Offset points - positive", positive)
+        ->setPointRadius(0.0025)
+        ->setPointColor(kGreen)
+        ->setEnabled(false);
+
+    polyscope::registerPointCloud("Offset points - negative", negative)
+        ->setPointRadius(0.0025)
+        ->setPointColor(kRed)
+        ->setEnabled(false);
+}
 
 void callback()
 {
@@ -59,6 +124,7 @@ void callback()
                         ->addVectorQuantity("normals", normals)
                         ->setVectorColor(kBlue)
                         ->setEnabled(false);
+                createOffsetPoints();
             }
             catch (const std::invalid_argument &e)
             {
