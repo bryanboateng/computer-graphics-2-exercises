@@ -116,11 +116,11 @@ void callback()
 
                 // Create the polyscope geometry
                 polyscope::registerPointCloud("Points", points)
-                        ->setPointRadius(0.0025)
-                        ->setPointColor(kOrange)
-                        ->addVectorQuantity("normals", normals)
-                        ->setVectorColor(kBlue)
-                        ->setEnabled(false);
+                    ->setPointRadius(0.0025)
+                    ->setPointColor(kOrange)
+                    ->addVectorQuantity("normals", normals)
+                    ->setVectorColor(kBlue)
+                    ->setEnabled(false);
                 createOffsetPoints();
             }
             catch (const std::invalid_argument &e)
