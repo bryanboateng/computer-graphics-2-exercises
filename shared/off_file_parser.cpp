@@ -5,7 +5,7 @@
 
 #include "typealiases.cpp"
 
-std::tuple<std::vector<Eigen::Vector3f>, std::vector<Eigen::Vector3f>, Eigen::Vector3f, Eigen::Vector3f> parseOff(std::string const &filename)
+std::tuple<std::vector<Eigen::Vector3f>, std::vector<Eigen::Vector3f>, std::vector<float>, std::vector<float>> parseOff(std::string const &filename)
 {
     std::ifstream off_file(filename);
     if (off_file.is_open())
