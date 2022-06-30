@@ -26,8 +26,6 @@ public:
         minima = std::move(mins);
         maxima = std::move(maxs);
     }
-    std::vector<Eigen::Vector3f> control_mesh_nodes;
-    std::vector<std::array<int, 2>> control_mesh_edges;
 };
 
 std::unique_ptr<SpatialData> spatial_data;
