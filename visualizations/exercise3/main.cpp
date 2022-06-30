@@ -8,7 +8,6 @@
 #include "args/args.hxx"
 #include "polyscope/curve_network.h"
 #include "polyscope/point_cloud.h"
-#include "polyscope/surface_mesh.h"
 #include "portable-file-dialogs.h"
 
 class SpatialData
