@@ -19,6 +19,7 @@ int grid_y_count = 10;
 int grid_z_count = 10;
 bool tessellation_is_enabled = false;
 int radius = 15;
+int trivariate_normal_epsilon = 10;
 
 std::unique_ptr<KdTreePair> kd_tree_pair;
 
@@ -142,13 +143,12 @@ float bruhwtfdfsdf(Eigen::Vector3f p)
 
 Eigen::Vector3f trivariate_normal(Eigen::Vector3f point)
 {
-    float epsilon = 10;
     float score = bruhwtfdfsdf(point);
-    Eigen::Vector3f fslodbfo{point + Eigen::Vector3f{epsilon, 0, 0}};
-    Eigen::Vector3f hher{point + Eigen::Vector3f{0, epsilon, 0}};
-    Eigen::Vector3f ndfg{point + Eigen::Vector3f{0, 0, epsilon}};
+    Eigen::Vector3f fslodbfo{point + Eigen::Vector3f{trivariate_normal_epsilon, 0, 0}};
+    Eigen::Vector3f hher{point + Eigen::Vector3f{0, trivariate_normal_epsilon, 0}};
+    Eigen::Vector3f ndfg{point + Eigen::Vector3f{0, 0, trivariate_normal_epsilon}};
     Eigen::Vector3f gh3erheherh{bruhwtfdfsdf(fslodbfo) - score, bruhwtfdfsdf(hher) - score, bruhwtfdfsdf(ndfg) - score};
-    Eigen::Vector3f gregergerge = gh3erheherh / epsilon;
+    Eigen::Vector3f gregergerge = gh3erheherh / float(trivariate_normal_epsilon);
     return gregergerge.normalized();
 }
 
@@ -377,6 +377,10 @@ void callback()
     ImGui::SameLine();
     ImGui::Text("#X, #Y, #Z");
     if (ImGui::SliderInt("Radius", &radius, 1, 200))
+    {
+        updateTessellation();
+    }
+    if (ImGui::SliderInt("Trivariate normal epsilon", &trivariate_normal_epsilon, 1, 200))
     {
         updateTessellation();
     }
