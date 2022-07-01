@@ -18,7 +18,7 @@ int grid_x_count = 10;
 int grid_y_count = 10;
 int grid_z_count = 10;
 bool show_grid = false;
-int radius = 75;
+int radius = 15;
 
 std::unique_ptr<KdTreePair> kd_tree_pair;
 
