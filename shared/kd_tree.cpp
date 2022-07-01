@@ -4,7 +4,7 @@
 #include "median_search.cpp"
 #include "typealiases.cpp"
 
-const int kMaxBucketSize = 400;
+const int kMaxBucketSize = 20;
 
 static float euclideanDistance(Eigen::Vector3f const &p1, Eigen::Vector3f const &p2)
 {
