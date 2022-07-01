@@ -65,15 +65,224 @@ std::pair<Eigen::Vector3f, float> calculateOffsetPoint(
     return std::make_pair(offsetPoint, alpha);
 }
 
+Eigen::Vector3f get_intersection_point(const std::pair<Eigen::Vector3f, float> &v_a, const std::pair<Eigen::Vector3f, float> &v_b)
+{
+    auto alpha = v_b.second / (v_b.second - v_a.second);
+    return alpha * v_a.first + (1 - alpha) * v_b.first;
+}
+
+float get_score(const Eigen::Vector3f &p)
+{
+    std::vector<std::pair<Eigen::Vector3f, float> > collected_points = kd_tree_pair->collectInRadius(p, radius);
+    if (collected_points.empty())
+    {
+        collected_points = kd_tree_pair->collectKNearest(p, 1);
+    }
+    double A = 0;
+    double b = 0;
+    Eigen::Vector3d d_p = p.cast<double>();
+    for (const std::pair<Eigen::Vector3f, float> &collected_point : collected_points)
+    {
+        Eigen::Vector3d d_collected_point = collected_point.first.cast<double>();
+        double wendland_value = wendland((d_collected_point - d_p).norm());
+
+        auto A_i = wendland_value;
+        A += A_i;
+        auto b_i = collected_point.second * wendland_value;
+        b += b_i;
+    }
+
+    return b / A;
+}
+
+Eigen::Vector3f trivariate_normal(Eigen::Vector3f point)
+{
+    float score = get_score(point);
+    Eigen::Vector3f fslodbfo{point + Eigen::Vector3f{trivariate_normal_epsilon, 0, 0}};
+    Eigen::Vector3f hher{point + Eigen::Vector3f{0, trivariate_normal_epsilon, 0}};
+    Eigen::Vector3f ndfg{point + Eigen::Vector3f{0, 0, trivariate_normal_epsilon}};
+    Eigen::Vector3f gh3erheherh{get_score(fslodbfo) - score, get_score(hher) - score, get_score(ndfg) - score};
+    Eigen::Vector3f gregergerge = gh3erheherh / float(trivariate_normal_epsilon);
+    return gregergerge.normalized();
+}
+
+std::vector<std::pair<Eigen::Vector3f, float> > createGrid()
+{
+    float min_x = spatial_data->minima[0];
+    float max_x = spatial_data->maxima[0];
+    float min_y = spatial_data->minima[1];
+    float max_y = spatial_data->maxima[1];
+    float min_z = spatial_data->minima[2];
+    float max_z = spatial_data->maxima[2];
+
+    Eigen::VectorXf xs = Eigen::VectorXf::LinSpaced(grid_x_count + 1, min_x, max_x);
+    Eigen::VectorXf ys = Eigen::VectorXf::LinSpaced(grid_y_count + 1, min_y, max_y);
+    Eigen::VectorXf zs = Eigen::VectorXf::LinSpaced(grid_z_count + 1, min_z, max_z);
+
+    std::vector<Eigen::Vector3f> insideGridPoints;
+    std::vector<Eigen::Vector3f> outsideGridPoints;
+    std::vector<std::pair<Eigen::Vector3f, float> > gridPoints;
+
+    for (float x : xs)
+    {
+        for (float y : ys)
+        {
+            for (float z : zs)
+            {
+                Eigen::Vector3f p{x, y, z};
+                float score = get_score(p);
+
+                if (score < 0)
+                {
+                    insideGridPoints.push_back(p);
+                }
+                else
+                {
+                    outsideGridPoints.push_back(p);
+                }
+                gridPoints.emplace_back(p, score);
+            }
+        }
+    }
+
+    polyscope::registerPointCloud("Grid points - inside", insideGridPoints)
+        ->setPointRadius(0.0045)
+        ->setPointColor(kCyan);
+
+    polyscope::registerPointCloud("Grid points - outside", outsideGridPoints)
+        ->setPointRadius(0.00125)
+        ->setPointColor(kBlack);
+
+    return gridPoints;
+}
+
+void createTessellation()
+{
+    std::vector<std::pair<Eigen::Vector3f, float> > gridPoints = createGrid();
+    std::vector<Eigen::Vector3f> normals;
+    std::vector<Eigen::Vector3f> nodes;
+    std::vector<std::array<int, 3> > faces;
+
+    int triangle_count = 0;
+
+    for (int i = 0; i < grid_x_count; i++)
+    {
+        for (int j = 0; j < grid_y_count; j++)
+        {
+            for (int k = 0; k < grid_z_count; k++)
+            {
+                std::pair<Eigen::Vector3f, float> v0 = gridPoints[i * (grid_y_count + 1) * (grid_z_count + 1) + j * (grid_z_count + 1) + k];
+                std::pair<Eigen::Vector3f, float> v1 = gridPoints[(i + 1) * (grid_y_count + 1) * (grid_z_count + 1) + j * (grid_z_count + 1) + k];
+                std::pair<Eigen::Vector3f, float> v2 = gridPoints[(i + 1) * (grid_y_count + 1) * (grid_z_count + 1) + (j + 1) * (grid_z_count + 1) + k];
+                std::pair<Eigen::Vector3f, float> v3 = gridPoints[i * (grid_y_count + 1) * (grid_z_count + 1) + (j + 1) * (grid_z_count + 1) + k];
+                std::pair<Eigen::Vector3f, float> v4 = gridPoints[i * (grid_y_count + 1) * (grid_z_count + 1) + j * (grid_z_count + 1) + (k + 1)];
+                std::pair<Eigen::Vector3f, float> v5 = gridPoints[(i + 1) * (grid_y_count + 1) * (grid_z_count + 1) + j * (grid_z_count + 1) + (k + 1)];
+                std::pair<Eigen::Vector3f, float> v6 = gridPoints[(i + 1) * (grid_y_count + 1) * (grid_z_count + 1) + (j + 1) * (grid_z_count + 1) + (k + 1)];
+                std::pair<Eigen::Vector3f, float> v7 = gridPoints[i * (grid_y_count + 1) * (grid_z_count + 1) + (j + 1) * (grid_z_count + 1) + (k + 1)];
+
+                auto cubeindex = 0;
+                if (v0.second < 0)
+                    cubeindex |= 1;
+                if (v1.second < 0)
+                    cubeindex |= 2;
+                if (v2.second < 0)
+                    cubeindex |= 4;
+                if (v3.second < 0)
+                    cubeindex |= 8;
+                if (v4.second < 0)
+                    cubeindex |= 16;
+                if (v5.second < 0)
+                    cubeindex |= 32;
+                if (v6.second < 0)
+                    cubeindex |= 64;
+                if (v7.second < 0)
+                    cubeindex |= 128;
+
+                if (edgeTable[cubeindex] != 0)
+                {
+                    Eigen::Vector3f vertlist[12];
+                    if (edgeTable[cubeindex] & 1)
+                        vertlist[0] = get_intersection_point(v0, v1);
+                    if (edgeTable[cubeindex] & 2)
+                        vertlist[1] = get_intersection_point(v1, v2);
+                    if (edgeTable[cubeindex] & 4)
+                        vertlist[2] = get_intersection_point(v2, v3);
+                    if (edgeTable[cubeindex] & 8)
+                        vertlist[3] = get_intersection_point(v0, v3);
+                    if (edgeTable[cubeindex] & 16)
+                        vertlist[4] = get_intersection_point(v4, v5);
+                    if (edgeTable[cubeindex] & 32)
+                        vertlist[5] = get_intersection_point(v5, v6);
+                    if (edgeTable[cubeindex] & 64)
+                        vertlist[6] = get_intersection_point(v6, v7);
+                    if (edgeTable[cubeindex] & 128)
+                        vertlist[7] = get_intersection_point(v7, v4);
+                    if (edgeTable[cubeindex] & 256)
+                        vertlist[8] = get_intersection_point(v0, v4);
+                    if (edgeTable[cubeindex] & 512)
+                        vertlist[9] = get_intersection_point(v1, v5);
+                    if (edgeTable[cubeindex] & 1024)
+                        vertlist[10] = get_intersection_point(v2, v6);
+                    if (edgeTable[cubeindex] & 2048)
+                        vertlist[11] = get_intersection_point(v3, v7);
+
+                    for (int m = 0; triTable[cubeindex][m] != -1; m += 3)
+                    {
+                        nodes.push_back(vertlist[triTable[cubeindex][m]]);
+                        normals.push_back(trivariate_normal(vertlist[triTable[cubeindex][m]]));
+                        nodes.push_back(vertlist[triTable[cubeindex][m + 1]]);
+                        normals.push_back(trivariate_normal(vertlist[triTable[cubeindex][m + 1]]));
+                        nodes.push_back(vertlist[triTable[cubeindex][m + 2]]);
+                        normals.push_back(trivariate_normal(vertlist[triTable[cubeindex][m + 2]]));
+                        faces.push_back({0 + 3 * triangle_count, 1 + 3 * triangle_count, 2 + 3 * triangle_count});
+                        triangle_count++;
+                    }
+                }
+            }
+        }
+    }
+
+    polyscope::registerSurfaceMesh("surfaceMesh", nodes, faces)
+        ->setSurfaceColor(kGreen)
+        ->addVertexVectorQuantity("normals", normals)
+        ->setVectorColor(kBlue);
+}
+
+void updateTessellation()
+{
+    if (spatial_data == nullptr)
+        return;
+
+    if (tessellation_is_enabled)
+    {
+        createTessellation();
+    }
+    else
+    {
+        if (polyscope::hasPointCloud("Grid points - inside"))
+        {
+            polyscope::removePointCloud("Grid points - inside");
+        }
+        if (polyscope::hasPointCloud("Grid points - outside"))
+        {
+            polyscope::removePointCloud("Grid points - outside");
+        }
+        if (polyscope::hasSurfaceMesh("surfaceMesh"))
+        {
+            polyscope::removeSurfaceMesh("surfaceMesh");
+        }
+    }
+}
+
 void createOffsetPoints()
 {
     std::vector<Eigen::Vector3f> positive;
     std::vector<Eigen::Vector3f> negative;
-    std::vector<float> p1 = spatial_data->minima;
-    std::vector<float> p2 = spatial_data->maxima;
-    float dx = p1[0] - p2[0];
-    float dy = p1[1] - p2[1];
-    float dz = p1[2] - p2[2];
+    std::vector<float> minima = spatial_data->minima;
+    std::vector<float> maxima = spatial_data->maxima;
+    float dx = minima[0] - maxima[0];
+    float dy = minima[1] - maxima[1];
+    float dz = minima[2] - maxima[2];
     float starting_alpha = 0.01 * std::sqrt(dx * dx + dy * dy + dz * dz) * 1.2;
     std::vector<std::pair<Eigen::Vector3f, float> > scored_points;
     for (size_t i = 0; i < spatial_data->points.size(); i++)
@@ -109,211 +318,6 @@ void createOffsetPoints()
         ->setPointRadius(0.0025)
         ->setPointColor(kRed)
         ->setEnabled(false);
-}
-
-Eigen::Vector3f VertexInterp(const std::pair<Eigen::Vector3f, float> &v_a, const std::pair<Eigen::Vector3f, float> &v_b)
-{
-    auto alpha = v_b.second / (v_b.second - v_a.second);
-    return alpha * v_a.first + (1 - alpha) * v_b.first;
-}
-
-float bruhwtfdfsdf(Eigen::Vector3f p)
-{
-    std::vector<std::pair<Eigen::Vector3f, float> > collected_points = kd_tree_pair->collectInRadius(p, radius);
-    if (collected_points.empty())
-    {
-        collected_points = kd_tree_pair->collectKNearest(p, 1);
-    }
-    double A = 0;
-    double b = 0;
-    Eigen::Vector3d d_p = p.cast<double>();
-    for (const std::pair<Eigen::Vector3f, float> &collected_point : collected_points)
-    {
-        Eigen::Vector3d d_collected_point = collected_point.first.cast<double>();
-        double wendland_value = wendland((d_collected_point - d_p).norm());
-
-        auto A_i = wendland_value;
-        A += A_i;
-        auto b_i = collected_point.second * wendland_value;
-        b += b_i;
-    }
-
-    return b / A;
-}
-
-Eigen::Vector3f trivariate_normal(Eigen::Vector3f point)
-{
-    float score = bruhwtfdfsdf(point);
-    Eigen::Vector3f fslodbfo{point + Eigen::Vector3f{trivariate_normal_epsilon, 0, 0}};
-    Eigen::Vector3f hher{point + Eigen::Vector3f{0, trivariate_normal_epsilon, 0}};
-    Eigen::Vector3f ndfg{point + Eigen::Vector3f{0, 0, trivariate_normal_epsilon}};
-    Eigen::Vector3f gh3erheherh{bruhwtfdfsdf(fslodbfo) - score, bruhwtfdfsdf(hher) - score, bruhwtfdfsdf(ndfg) - score};
-    Eigen::Vector3f gregergerge = gh3erheherh / float(trivariate_normal_epsilon);
-    return gregergerge.normalized();
-}
-
-void createTessellation()
-{
-    std::vector<Eigen::Vector3f> insideGridPoints;
-    std::vector<Eigen::Vector3f> outsideGridPoints;
-    std::vector<std::pair<Eigen::Vector3f, float> > gridPoints;
-    std::vector<Eigen::Vector3f> normals;
-
-    float min_x = spatial_data->minima[0];
-    float max_x = spatial_data->maxima[0];
-    float min_y = spatial_data->minima[1];
-    float max_y = spatial_data->maxima[1];
-    float min_z = spatial_data->minima[2];
-    float max_z = spatial_data->maxima[2];
-
-    Eigen::VectorXf xs = Eigen::VectorXf::LinSpaced(grid_x_count + 1, min_x, max_x);
-    Eigen::VectorXf ys = Eigen::VectorXf::LinSpaced(grid_y_count + 1, min_y, max_y);
-    Eigen::VectorXf zs = Eigen::VectorXf::LinSpaced(grid_z_count + 1, min_z, max_z);
-    for (float x : xs)
-    {
-        for (float y : ys)
-        {
-            for (float z : zs)
-            {
-                Eigen::Vector3f p{x, y, z};
-
-                auto score = bruhwtfdfsdf(p);
-
-                if (score < 0)
-                {
-                    insideGridPoints.push_back(p);
-                }
-                else
-                {
-                    outsideGridPoints.push_back(p);
-                }
-                gridPoints.emplace_back(p, score);
-            }
-        }
-    }
-
-    std::vector<Eigen::Vector3f> nodes;
-    std::vector<std::array<int, 3> > faces;
-    auto ntriang = 0;
-
-    for (int i = 0; i < grid_x_count; i++)
-    {
-        for (int j = 0; j < grid_y_count; j++)
-        {
-            for (int k = 0; k < grid_z_count; k++)
-            {
-                auto v0 = gridPoints[i * (grid_y_count + 1) * (grid_z_count + 1) + j * (grid_z_count + 1) + k];
-                auto v1 = gridPoints[(i + 1) * (grid_y_count + 1) * (grid_z_count + 1) + j * (grid_z_count + 1) + k];
-                auto v2 = gridPoints[(i + 1) * (grid_y_count + 1) * (grid_z_count + 1) + (j + 1) * (grid_z_count + 1) + k];
-                auto v3 = gridPoints[i * (grid_y_count + 1) * (grid_z_count + 1) + (j + 1) * (grid_z_count + 1) + k];
-                auto v4 = gridPoints[i * (grid_y_count + 1) * (grid_z_count + 1) + j * (grid_z_count + 1) + (k + 1)];
-                auto v5 = gridPoints[(i + 1) * (grid_y_count + 1) * (grid_z_count + 1) + j * (grid_z_count + 1) + (k + 1)];
-                auto v6 = gridPoints[(i + 1) * (grid_y_count + 1) * (grid_z_count + 1) + (j + 1) * (grid_z_count + 1) + (k + 1)];
-                auto v7 = gridPoints[i * (grid_y_count + 1) * (grid_z_count + 1) + (j + 1) * (grid_z_count + 1) + (k + 1)];
-
-                auto cubeindex = 0;
-                if (v0.second < 0)
-                    cubeindex |= 1;
-                if (v1.second < 0)
-                    cubeindex |= 2;
-                if (v2.second < 0)
-                    cubeindex |= 4;
-                if (v3.second < 0)
-                    cubeindex |= 8;
-                if (v4.second < 0)
-                    cubeindex |= 16;
-                if (v5.second < 0)
-                    cubeindex |= 32;
-                if (v6.second < 0)
-                    cubeindex |= 64;
-                if (v7.second < 0)
-                    cubeindex |= 128;
-
-                /* Cube is entirely in/out of the surface */
-
-                if (edgeTable[cubeindex] != 0)
-                {
-                    Eigen::Vector3f vertlist[12];
-                    /* Find the vertices where the surface intersects the cube */
-                    if (edgeTable[cubeindex] & 1)
-                        vertlist[0] = VertexInterp(v0, v1);
-                    if (edgeTable[cubeindex] & 2)
-                        vertlist[1] = VertexInterp(v1, v2);
-                    if (edgeTable[cubeindex] & 4)
-                        vertlist[2] = VertexInterp(v2, v3);
-                    if (edgeTable[cubeindex] & 8)
-                        vertlist[3] = VertexInterp(v0, v3);
-                    if (edgeTable[cubeindex] & 16)
-                        vertlist[4] = VertexInterp(v4, v5);
-                    if (edgeTable[cubeindex] & 32)
-                        vertlist[5] = VertexInterp(v5, v6);
-                    if (edgeTable[cubeindex] & 64)
-                        vertlist[6] = VertexInterp(v6, v7);
-                    if (edgeTable[cubeindex] & 128)
-                        vertlist[7] = VertexInterp(v7, v4);
-                    if (edgeTable[cubeindex] & 256)
-                        vertlist[8] = VertexInterp(v0, v4);
-                    if (edgeTable[cubeindex] & 512)
-                        vertlist[9] = VertexInterp(v1, v5);
-                    if (edgeTable[cubeindex] & 1024)
-                        vertlist[10] = VertexInterp(v2, v6);
-                    if (edgeTable[cubeindex] & 2048)
-                        vertlist[11] = VertexInterp(v3, v7);
-
-                    for (int m = 0; triTable[cubeindex][m] != -1; m += 3)
-                    {
-                        nodes.push_back(vertlist[triTable[cubeindex][m]]);
-                        normals.push_back(trivariate_normal(vertlist[triTable[cubeindex][m]]));
-                        nodes.push_back(vertlist[triTable[cubeindex][m + 1]]);
-                        normals.push_back(trivariate_normal(vertlist[triTable[cubeindex][m + 1]]));
-                        nodes.push_back(vertlist[triTable[cubeindex][m + 2]]);
-                        normals.push_back(trivariate_normal(vertlist[triTable[cubeindex][m + 2]]));
-                        faces.push_back({0 + 3 * ntriang, 1 + 3 * ntriang, 2 + 3 * ntriang});
-                        ntriang++;
-                    }
-                }
-            }
-        }
-    }
-
-    polyscope::registerSurfaceMesh("surfaceMesh", nodes, faces)
-        ->setSurfaceColor(kGreen)
-        ->addVertexVectorQuantity("normals", normals)
-        ->setVectorColor(kBlue);
-
-    polyscope::registerPointCloud("Grid points - inside", insideGridPoints)
-        ->setPointRadius(0.0045)
-        ->setPointColor(kCyan);
-
-    polyscope::registerPointCloud("Grid points - outside", outsideGridPoints)
-        ->setPointRadius(0.00125)
-        ->setPointColor(kBlack);
-}
-
-void updateTessellation()
-{
-    if (spatial_data == nullptr)
-        return;
-
-    if (tessellation_is_enabled)
-    {
-        createTessellation();
-    }
-    else
-    {
-        if (polyscope::hasPointCloud("Grid points - inside"))
-        {
-            polyscope::removePointCloud("Grid points - inside");
-        }
-        if (polyscope::hasPointCloud("Grid points - outside"))
-        {
-            polyscope::removePointCloud("Grid points - outside");
-        }
-        if (polyscope::hasSurfaceMesh("surfaceMesh"))
-        {
-            polyscope::removeSurfaceMesh("surfaceMesh");
-        }
-    }
 }
 
 void callback()
