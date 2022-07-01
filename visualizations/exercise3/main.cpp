@@ -572,12 +572,12 @@ void createGrid()
         ->setVectorColor(kBlue);
 
     polyscope::registerPointCloud("Grid points inside", insideGridPoints)
-        ->setPointRadius(0.00125)
-        ->setPointColor(kGreen);
+        ->setPointRadius(0.0045)
+        ->setPointColor(kCyan);
 
     polyscope::registerPointCloud("Grid points outside", outsideGridPoints)
         ->setPointRadius(0.00125)
-        ->setPointColor(kPink);
+        ->setPointColor(kGray);
 }
 
 void updateGrid()
@@ -632,7 +632,7 @@ void callback()
                     ->setPointRadius(0.0025)
                     ->setPointColor(kOrange)
                     ->addVectorQuantity("normals", normals)
-                    ->setVectorColor(kBlue)
+                    ->setVectorColor(kPurple)
                     ->setEnabled(false);
                 createOffsetPoints();
                 updateGrid();
