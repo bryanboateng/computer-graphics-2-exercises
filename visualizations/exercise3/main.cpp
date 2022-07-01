@@ -18,7 +18,7 @@ int grid_x_count = 10;
 int grid_y_count = 10;
 int grid_z_count = 10;
 bool show_grid = false;
-float radius = 75;
+int radius = 75;
 
 std::unique_ptr<KdTreePair> kd_tree_pair;
 
@@ -376,7 +376,7 @@ void callback()
     ImGui::PopItemWidth();
     ImGui::SameLine();
     ImGui::Text("#X, #Y, #Z");
-    if (ImGui::SliderFloat("Radius", &radius, 1.0f, 200.0f, "%.3f"))
+    if (ImGui::SliderInt("Radius", &radius, 1, 200))
     {
         updateGrid();
     }
