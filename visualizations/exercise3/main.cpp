@@ -95,15 +95,15 @@ float get_score(const Eigen::Vector3f &p)
     return b / A;
 }
 
-Eigen::Vector3f trivariate_normal(Eigen::Vector3f point)
+Eigen::Vector3f finite_differences_normal(Eigen::Vector3f point)
 {
     float score = get_score(point);
-    Eigen::Vector3f fslodbfo{point + Eigen::Vector3f{trivariate_normal_epsilon, 0, 0}};
-    Eigen::Vector3f hher{point + Eigen::Vector3f{0, trivariate_normal_epsilon, 0}};
-    Eigen::Vector3f ndfg{point + Eigen::Vector3f{0, 0, trivariate_normal_epsilon}};
-    Eigen::Vector3f gh3erheherh{get_score(fslodbfo) - score, get_score(hher) - score, get_score(ndfg) - score};
-    Eigen::Vector3f gregergerge = gh3erheherh / float(trivariate_normal_epsilon);
-    return gregergerge.normalized();
+    Eigen::Vector3f x{point + Eigen::Vector3f{trivariate_normal_epsilon, 0, 0}};
+    Eigen::Vector3f y{point + Eigen::Vector3f{0, trivariate_normal_epsilon, 0}};
+    Eigen::Vector3f z{point + Eigen::Vector3f{0, 0, trivariate_normal_epsilon}};
+    Eigen::Vector3f vector{get_score(x) - score, get_score(y) - score, get_score(z) - score};
+    Eigen::Vector3f normal = vector / float(trivariate_normal_epsilon);
+    return normal.normalized();
 }
 
 std::vector<std::pair<Eigen::Vector3f, float> > createGrid()
@@ -229,11 +229,11 @@ void createTessellation()
                     for (int m = 0; triTable[cubeindex][m] != -1; m += 3)
                     {
                         nodes.push_back(vertlist[triTable[cubeindex][m]]);
-                        normals.push_back(trivariate_normal(vertlist[triTable[cubeindex][m]]));
+                        normals.push_back(finite_differences_normal(vertlist[triTable[cubeindex][m]]));
                         nodes.push_back(vertlist[triTable[cubeindex][m + 1]]);
-                        normals.push_back(trivariate_normal(vertlist[triTable[cubeindex][m + 1]]));
+                        normals.push_back(finite_differences_normal(vertlist[triTable[cubeindex][m + 1]]));
                         nodes.push_back(vertlist[triTable[cubeindex][m + 2]]);
-                        normals.push_back(trivariate_normal(vertlist[triTable[cubeindex][m + 2]]));
+                        normals.push_back(finite_differences_normal(vertlist[triTable[cubeindex][m + 2]]));
                         faces.push_back({0 + 3 * triangle_count, 1 + 3 * triangle_count, 2 + 3 * triangle_count});
                         triangle_count++;
                     }
