@@ -102,8 +102,8 @@ Eigen::Vector3f finite_differences_normal(Eigen::Vector3f point)
     Eigen::Vector3f y{point + Eigen::Vector3f{0, trivariate_normal_epsilon, 0}};
     Eigen::Vector3f z{point + Eigen::Vector3f{0, 0, trivariate_normal_epsilon}};
     Eigen::Vector3f vector{get_score(x) - score, get_score(y) - score, get_score(z) - score};
-    Eigen::Vector3f normal = vector / float(trivariate_normal_epsilon);
-    return normal.normalized();
+    Eigen::Vector3f gradient = vector / float(trivariate_normal_epsilon);
+    return gradient.normalized();
 }
 
 std::vector<std::pair<Eigen::Vector3f, float> > createGrid()
