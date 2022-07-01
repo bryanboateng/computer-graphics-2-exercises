@@ -400,10 +400,46 @@ void createOffsetPoints()
         ->setEnabled(false);
 }
 
-Eigen::Vector3f VertexInterp(const std::pair<Eigen::Vector3f, float>& v_a, const std::pair<Eigen::Vector3f, float>& v_b)
+Eigen::Vector3f VertexInterp(const std::pair<Eigen::Vector3f, float> &v_a, const std::pair<Eigen::Vector3f, float> &v_b)
 {
     auto alpha = v_b.second / (v_b.second - v_a.second);
     return alpha * v_a.first + (1 - alpha) * v_b.first;
+}
+
+float bruhwtfdfsdf(Eigen::Vector3f p)
+{
+    std::vector<std::pair<Eigen::Vector3f, float> > collected_points = kd_tree_pair->collectInRadius(p, radius);
+    if (collected_points.empty())
+    {
+        collected_points = kd_tree_pair->collectKNearest(p, 1);
+    }
+    double A = 0;
+    double b = 0;
+    Eigen::Vector3d d_p = p.cast<double>();
+    for (const std::pair<Eigen::Vector3f, float> &collected_point : collected_points)
+    {
+        Eigen::Vector3d d_collected_point = collected_point.first.cast<double>();
+        double wendland_value = wendland((d_collected_point - d_p).norm());
+
+        auto A_i = wendland_value;
+        A += A_i;
+        auto b_i = collected_point.second * wendland_value;
+        b += b_i;
+    }
+
+    return b / A;
+}
+
+Eigen::Vector3f trivariate_normal(Eigen::Vector3f point)
+{
+    float epsilon = 10;
+    float score = bruhwtfdfsdf(point);
+    Eigen::Vector3f fslodbfo{point + Eigen::Vector3f{epsilon, 0, 0}};
+    Eigen::Vector3f hher{point + Eigen::Vector3f{0, epsilon, 0}};
+    Eigen::Vector3f ndfg{point + Eigen::Vector3f{0, 0, epsilon}};
+    Eigen::Vector3f gh3erheherh{bruhwtfdfsdf(fslodbfo) - score, bruhwtfdfsdf(hher) - score, bruhwtfdfsdf(ndfg) - score};
+    Eigen::Vector3f gregergerge = gh3erheherh / epsilon;
+    return gregergerge.normalized();
 }
 
 void createGrid()
@@ -411,6 +447,7 @@ void createGrid()
     std::vector<Eigen::Vector3f> insideGridPoints;
     std::vector<Eigen::Vector3f> outsideGridPoints;
     std::vector<std::pair<Eigen::Vector3f, float> > gridPoints;
+    std::vector<Eigen::Vector3f> normals;
 
     float min_x = spatial_data->minima[0];
     float max_x = spatial_data->maxima[0];
@@ -430,27 +467,8 @@ void createGrid()
             {
                 Eigen::Vector3f p{x, y, z};
 
-                std::vector<std::pair<Eigen::Vector3f, float> > collected_points = kd_tree_pair->collectInRadius(p, radius);
-                if (collected_points.empty())
-                {
-                    collected_points = kd_tree_pair->collectKNearest(p, 1);
-                }
+                auto score = bruhwtfdfsdf(p);
 
-                double A = 0;
-                double b = 0;
-                Eigen::Vector3d d_p = p.cast<double>();
-                for (const std::pair<Eigen::Vector3f, float> &collected_point : collected_points)
-                {
-                    Eigen::Vector3d d_collected_point = collected_point.first.cast<double>();
-                    double wendland_value = wendland((d_collected_point - d_p).norm());
-
-                    auto A_i = wendland_value;
-                    A += A_i;
-                    auto b_i = collected_point.second * wendland_value;
-                    b += b_i;
-                }
-
-                auto score = b / A;
                 if (score < 0)
                 {
                     insideGridPoints.push_back(p);
@@ -535,8 +553,11 @@ void createGrid()
                     for (int m = 0; triTable[cubeindex][m] != -1; m += 3)
                     {
                         nodes.push_back(vertlist[triTable[cubeindex][m]]);
+                        normals.push_back(trivariate_normal(vertlist[triTable[cubeindex][m]]));
                         nodes.push_back(vertlist[triTable[cubeindex][m + 1]]);
+                        normals.push_back(trivariate_normal(vertlist[triTable[cubeindex][m + 1]]));
                         nodes.push_back(vertlist[triTable[cubeindex][m + 2]]);
+                        normals.push_back(trivariate_normal(vertlist[triTable[cubeindex][m + 2]]));
                         faces.push_back({0 + 3 * ntriang, 1 + 3 * ntriang, 2 + 3 * ntriang});
                         ntriang++;
                     }
@@ -546,7 +567,9 @@ void createGrid()
     }
 
     polyscope::registerSurfaceMesh("surfaceMesh", nodes, faces)
-        ->setSurfaceColor(kGreen);
+        ->setSurfaceColor(kGreen)
+        ->addVertexVectorQuantity("normals", normals)
+        ->setVectorColor(kBlue);
 
     polyscope::registerPointCloud("Grid points inside", insideGridPoints)
         ->setPointRadius(0.00125)
