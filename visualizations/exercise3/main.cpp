@@ -17,7 +17,7 @@
 int grid_x_count = 10;
 int grid_y_count = 10;
 int grid_z_count = 10;
-bool show_grid = false;
+bool tessellation_is_enabled = false;
 int radius = 15;
 
 std::unique_ptr<KdTreePair> kd_tree_pair;
@@ -152,7 +152,7 @@ Eigen::Vector3f trivariate_normal(Eigen::Vector3f point)
     return gregergerge.normalized();
 }
 
-void createGrid()
+void createTessellation()
 {
     std::vector<Eigen::Vector3f> insideGridPoints;
     std::vector<Eigen::Vector3f> outsideGridPoints;
@@ -281,33 +281,33 @@ void createGrid()
         ->addVertexVectorQuantity("normals", normals)
         ->setVectorColor(kBlue);
 
-    polyscope::registerPointCloud("Grid points inside", insideGridPoints)
+    polyscope::registerPointCloud("Grid points - inside", insideGridPoints)
         ->setPointRadius(0.0045)
         ->setPointColor(kCyan);
 
-    polyscope::registerPointCloud("Grid points outside", outsideGridPoints)
+    polyscope::registerPointCloud("Grid points - outside", outsideGridPoints)
         ->setPointRadius(0.00125)
-        ->setPointColor(kGray);
+        ->setPointColor(kBlack);
 }
 
-void updateGrid()
+void updateTessellation()
 {
     if (spatial_data == nullptr)
         return;
 
-    if (show_grid)
+    if (tessellation_is_enabled)
     {
-        createGrid();
+        createTessellation();
     }
     else
     {
-        if (polyscope::hasPointCloud("Grid points inside"))
+        if (polyscope::hasPointCloud("Grid points - inside"))
         {
-            polyscope::removePointCloud("Grid points inside");
+            polyscope::removePointCloud("Grid points - inside");
         }
-        if (polyscope::hasPointCloud("Grid points outside"))
+        if (polyscope::hasPointCloud("Grid points - outside"))
         {
-            polyscope::removePointCloud("Grid points outside");
+            polyscope::removePointCloud("Grid points - outside");
         }
         if (polyscope::hasSurfaceMesh("surfaceMesh"))
         {
@@ -345,7 +345,7 @@ void callback()
                     ->setVectorColor(kPurple)
                     ->setEnabled(false);
                 createOffsetPoints();
-                updateGrid();
+                updateTessellation();
             }
             catch (const std::invalid_argument &e)
             {
@@ -354,34 +354,34 @@ void callback()
             }
         }
     }
-    ImGui::Text("Control Points");
+    ImGui::Text("Tessellation");
     ImGui::Separator();
     ImGui::Text("Grid");
     ImGui::SameLine();
     ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x * 0.25f);
     if (ImGui::SliderInt("##grid_x_count", &grid_x_count, 1, 30))
     {
-        updateGrid();
+        updateTessellation();
     }
     ImGui::SameLine();
     if (ImGui::SliderInt("##grid_y_count", &grid_y_count, 1, 30))
     {
-        updateGrid();
+        updateTessellation();
     }
     ImGui::SameLine();
     if (ImGui::SliderInt("##grid_z_count", &grid_z_count, 1, 30))
     {
-        updateGrid();
+        updateTessellation();
     }
     ImGui::PopItemWidth();
     ImGui::SameLine();
     ImGui::Text("#X, #Y, #Z");
     if (ImGui::SliderInt("Radius", &radius, 1, 200))
     {
-        updateGrid();
+        updateTessellation();
     }
-    if (ImGui::Checkbox("Show Grid", &show_grid))
-        updateGrid();
+    if (ImGui::Checkbox("Enabled", &tessellation_is_enabled))
+        updateTessellation();
 }
 
 int main(int argc, char **argv)
