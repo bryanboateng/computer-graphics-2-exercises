@@ -5,6 +5,7 @@
 #include "../../shared/kd_tree_2.cpp"
 #include "../../shared/off_file_parser.cpp"
 #include "../../shared/typealiases.cpp"
+#include "../../shared/wendland.cpp"
 #include "args/args.hxx"
 #include "polyscope/curve_network.h"
 #include "polyscope/point_cloud.h"
@@ -39,11 +40,6 @@ public:
 };
 
 std::unique_ptr<SpatialData> spatial_data;
-
-double wendland(double d)
-{
-    return std::pow((1 - d), 4) * (4 * d + 1);
-}
 
 float weightedLeastSquares(float u, float v, Eigen::Matrix<double, 6, 1> coefficients)
 {
@@ -194,19 +190,19 @@ void createGrid()
     }
 
     polyscope::registerCurveNetwork("grid", meshNodes, edges)
-        ->setColor(kPink)
-        ->setRadius(0.00064);
+            ->setColor(kPink)
+            ->setRadius(0.00064);
 }
 
 void createControlMesh()
 {
     polyscope::registerCurveNetwork("controlMesh", spatial_data->control_mesh_nodes, spatial_data->control_mesh_edges)
-        ->setColor(kRed)
-        ->setRadius(0.00064);
+            ->setColor(kRed)
+            ->setRadius(0.00064);
 
     polyscope::registerPointCloud("controlMeshPoints", spatial_data->control_mesh_nodes)
-        ->setPointRadius(0.004)
-        ->setPointColor(kRed);
+            ->setPointRadius(0.004)
+            ->setPointColor(kRed);
 }
 
 void createSurfaceMesh()
@@ -257,10 +253,10 @@ void createSurfaceMesh()
     }
 
     polyscope::registerSurfaceMesh("surfaceMesh", nodes, faces)
-        ->setSurfaceColor(kGreen)
-        ->addVertexVectorQuantity("normals", vector_quantity)
-        ->setVectorColor(kBlue)
-        ->setEnabled(false);
+            ->setSurfaceColor(kGreen)
+            ->addVertexVectorQuantity("normals", vector_quantity)
+            ->setVectorColor(kBlue)
+            ->setEnabled(false);
 }
 
 void updateGrid()
@@ -343,8 +339,8 @@ void callback()
 
                 // Create the polyscope geometry
                 polyscope::registerPointCloud("Points", points)
-                    ->setPointRadius(0.0025)
-                    ->setPointColor(kOrange);
+                        ->setPointRadius(0.0025)
+                        ->setPointColor(kOrange);
                 updateGrid();
                 updateControlMeshData();
                 updateControlMesh();
