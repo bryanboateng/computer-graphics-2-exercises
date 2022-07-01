@@ -1,97 +1,82 @@
 #include <cmath>
 #include <queue>
+#include <utility>
 
-#include "median_search.cpp"
 #include "typealiases.cpp"
 
-const int kMaxBucketSize = 20;
-
-static float euclideanDistance(Eigen::Vector3f const &p1, Eigen::Vector3f const &p2)
-{
-    return (p1-p2).norm();
-}
-
-
-struct Compare {
-    bool operator()(std::pair<float, Eigen::Vector3f> const& p1, std::pair<float, Eigen::Vector3f> const& p2)
+struct ComparePair {
+    bool operator()(std::pair<float, std::pair<Eigen::Vector3f, float>> const& p1, std::pair<float, std::pair<Eigen::Vector3f, float>> const& p2)
     {
         return p1.first < p2.first;
     }
 };
 
-class KdTreeNode
+class KdTreeNodePair
 {
 public:
     float median;
-    KdTreeNode *left;
-    KdTreeNode *right;
-    KdTreeNode *parent = nullptr;
-    std::vector<Eigen::Vector3f> bucket;
+    KdTreeNodePair *left;
+    KdTreeNodePair *right;
+    KdTreeNodePair *parent = nullptr;
+    std::vector<std::pair<Eigen::Vector3f, float>> bucket;
     int depth;
-    KdTreeNode(float p, KdTreeNode *l, KdTreeNode *r, std::vector<Eigen::Vector3f> b, int d)
+    KdTreeNodePair(float p, KdTreeNodePair *l, KdTreeNodePair *r, std::vector<std::pair<Eigen::Vector3f, float>> b, int d)
     {
         median = p;
         left = l;
         right = r;
-        bucket = b;
+        bucket = std::move(b);
         depth = d;
     }
 };
 
-class KdTree
+class KdTreePair
 {
 public:
-    KdTreeNode *root;
-    KdTree(const std::vector<Eigen::Vector3f> &points)
+    KdTreeNodePair *root;
+    explicit KdTreePair(std::vector<std::pair<Eigen::Vector3f, float>> points)
         : m_points(std::move(points))
     {
         root = build_tree_linear_median_search(&m_points, 0);
     }
 
-    virtual ~KdTree() = default;
+    virtual ~KdTreePair() = default;
 
-    [[nodiscard]] std::vector<Eigen::Vector3f> const &getPoints() const
+    [[nodiscard]] std::vector<std::pair<Eigen::Vector3f, float>> const &getPoints() const
     {
         return m_points;
     }
 
-    virtual std::vector<Eigen::Vector3f> collectInRadius(const Eigen::Vector3f &p, float radius) const
+    [[nodiscard]] virtual std::vector<std::pair<Eigen::Vector3f, float>> collectInRadius(const Eigen::Vector3f &p, float radius) const
     {
-        std::vector<Eigen::Vector3f> list;
+        std::vector<std::pair<Eigen::Vector3f, float>> list;
         collectInRadiusKnn(&list, root, p, radius, 0);
         return list;
     }
 
-    /**
-     * Algorithm:
-     *  -> traverse entire tree, calculate minimum distance from point to leaves
-     *  -> fill up k nearest candidates candidates from closest bucket/s
-     *  -> make sure to check all buckets where the minimum distance is less than
-     *     the furthest point in the candidates list.
-     * */
-    virtual std::vector<Eigen::Vector3f> collectKNearest(const Eigen::Vector3f &p, unsigned int k) const
+    [[nodiscard]] virtual std::vector<std::pair<Eigen::Vector3f, float>> collectKNearest(const Eigen::Vector3f &p, unsigned int k) const
     {
-        std::vector<Eigen::Vector3f> result;
+        std::vector<std::pair<Eigen::Vector3f, float>> result;
         if (k == 0)
         {
             return result;
         }
-        KdTreeNode *cursor = root;
+        KdTreeNodePair *cursor = root;
         bool found = false;
-        std::vector<std::pair<KdTreeNode *, float>> bucketDistances;
+        std::vector<std::pair<KdTreeNodePair *, float>> bucketDistances;
         collectDistanceToBuckets(root, p, &bucketDistances);
-        std::sort(bucketDistances.begin(), bucketDistances.end(), [=](std::pair<KdTreeNode *, float> &a, std::pair<KdTreeNode *, float> &b)
-                  { return a.second < b.second; });
-        std::priority_queue<std::pair<float, Eigen::Vector3f>, std::vector<std::pair<float, Eigen::Vector3f>>, Compare> queue;
+        std::sort(bucketDistances.begin(), bucketDistances.end(), [=](std::pair<KdTreeNodePair *, float> &a, std::pair<KdTreeNodePair *, float> &b)
+        { return a.second < b.second; });
+        std::priority_queue<std::pair<float, std::pair<Eigen::Vector3f, float>>, std::vector<std::pair<float, std::pair<Eigen::Vector3f, float>>>, ComparePair> queue;
         size_t position = 0;
         while (queue.size() < k && position < bucketDistances.size())
         {
-            std::vector<Eigen::Vector3f> bucket = bucketDistances[position].first->bucket;
-            std::vector<Eigen::Vector3f> nClosest = collectNClosest(bucket, p, k - queue.size());
-            for (Eigen::Vector3f entry : nClosest)
+            std::vector<std::pair<Eigen::Vector3f, float>> bucket = bucketDistances[position].first->bucket;
+            std::vector<std::pair<Eigen::Vector3f, float>> nClosest = collectNClosest(bucket, p, k - queue.size());
+            for (const std::pair<Eigen::Vector3f, float>& entry : nClosest)
             {
-                float distance = euclideanDistance(p, entry);
-                queue.push(std::pair<float, Eigen::Vector3f>(distance, entry));
+                float distance = euclideanDistance(p, entry.first);
+                queue.push(std::pair<float, std::pair<Eigen::Vector3f, float>>(distance, entry));
             }
             if (bucket.size() == nClosest.size())
             {
@@ -106,17 +91,17 @@ public:
             {
                 break;
             }
-            std::vector<Eigen::Vector3f> bucket = bucketDistances[position].first->bucket;
-            std::vector<Eigen::Vector3f> nClosest = collectCloserThan(bucket, p, maxDistance, k);
+            std::vector<std::pair<Eigen::Vector3f, float>> bucket = bucketDistances[position].first->bucket;
+            std::vector<std::pair<Eigen::Vector3f, float>> nClosest = collectCloserThan(bucket, p, maxDistance, k);
 
-            for (Eigen::Vector3f item : nClosest)
+            for (const std::pair<Eigen::Vector3f, float>& item : nClosest)
             {
-                float distance = euclideanDistance(p, item);
-                std::pair<float, Eigen::Vector3f> maxValue = queue.top();
+                float distance = euclideanDistance(p, item.first);
+                std::pair<float, std::pair<Eigen::Vector3f, float>> maxValue = queue.top();
                 if (distance < maxValue.first)
                 {
                     queue.pop();
-                    queue.push(std::pair<float, Eigen::Vector3f>(distance, item));
+                    queue.push(std::pair<float, std::pair<Eigen::Vector3f, float>>(distance, item));
                 }
                 else
                 {
@@ -134,7 +119,7 @@ public:
     }
 
 private:
-    KdTreeNode *build_tree_linear_median_search(std::vector<Eigen::Vector3f> *pts, int depth)
+    KdTreeNodePair *build_tree_linear_median_search(std::vector<std::pair<Eigen::Vector3f, float>> *pts, int depth)
     {
         if (pts->size() == 0)
         {
@@ -143,20 +128,20 @@ private:
         int axis = depth % 3;
 
         std::vector<float> d;
-        for(Eigen::Vector3f const &p : *pts) {
-            d.push_back(p[axis]);
+        for(std::pair<Eigen::Vector3f, float> const &p : *pts) {
+            d.push_back(p.first[axis]);
         }
 
         float median = median_search::search(d, pts->size() / 2);
-        std::vector<Eigen::Vector3f> left, right;
-        KdTreeNode *leftChild = nullptr;
-        KdTreeNode *rightChild = nullptr;
-        std::vector<Eigen::Vector3f> bucket;
+        std::vector<std::pair<Eigen::Vector3f, float>> left, right;
+        KdTreeNodePair *leftChild = nullptr;
+        KdTreeNodePair *rightChild = nullptr;
+        std::vector<std::pair<Eigen::Vector3f, float>> bucket;
         if (pts->size() > kMaxBucketSize)
         {
             for (std::size_t i = 0; i < pts->size(); ++i)
             {
-                if (pts->at(i)[axis] < median)
+                if (pts->at(i).first[axis] < median)
                 {
                     left.push_back(pts->at(i));
                 }
@@ -172,7 +157,7 @@ private:
         {
             bucket = *pts;
         }
-        KdTreeNode *retVal = new KdTreeNode(median, leftChild, rightChild, bucket, depth);
+        KdTreeNodePair *retVal = new KdTreeNodePair(median, leftChild, rightChild, bucket, depth);
         if (leftChild != nullptr)
             leftChild->parent = retVal;
         if (rightChild != nullptr)
@@ -180,21 +165,21 @@ private:
         return retVal;
     }
 
-    virtual std::vector<Eigen::Vector3f> collectNClosest(const std::vector<Eigen::Vector3f> &list, const Eigen::Vector3f &p, size_t n) const
+    [[nodiscard]] virtual std::vector<std::pair<Eigen::Vector3f, float>> collectNClosest(const std::vector<std::pair<Eigen::Vector3f, float>> &list, const Eigen::Vector3f &p, size_t n) const
     {
         if (n >= list.size())
         {
             return list;
         }
-        std::vector<Eigen::Vector3f> result;
+        std::vector<std::pair<Eigen::Vector3f, float>> result;
         std::vector<std::pair<int, float>> distances; // index+distance
         for (size_t i = 0; i < list.size(); i++)
         {
-            float distance = euclideanDistance(p, list[i]);
-            distances.push_back(std::pair<int, float>(i, distance));
+            float distance = euclideanDistance(p, list[i].first);
+            distances.emplace_back(i, distance);
         }
         std::sort(distances.begin(), distances.end(), [=](std::pair<int, float> &a, std::pair<int, float> &b)
-                  { return a.second < b.second; });
+        { return a.second < b.second; });
         for (size_t i = 0; i < n; i++)
         {
             result.push_back(list[distances[i].first]);
@@ -202,20 +187,20 @@ private:
         return result;
     }
 
-    virtual std::vector<Eigen::Vector3f> collectCloserThan(const std::vector<Eigen::Vector3f> &list, const Eigen::Vector3f &p, float maxDistance, size_t maxPoints) const
+    [[nodiscard]] virtual std::vector<std::pair<Eigen::Vector3f, float>> collectCloserThan(const std::vector<std::pair<Eigen::Vector3f, float>> &list, const Eigen::Vector3f &p, float maxDistance, size_t maxPoints) const
     {
-        std::vector<Eigen::Vector3f> result;
+        std::vector<std::pair<Eigen::Vector3f, float>> result;
         std::vector<std::pair<int, float>> distances;
         for (size_t i = 0; i < list.size(); i++)
         {
-            float distance = euclideanDistance(p, list[i]);
+            float distance = euclideanDistance(p, list[i].first);
             if (distance <= maxDistance)
             {
-                distances.push_back(std::pair<int, float>(i, distance));
+                distances.emplace_back(i, distance);
             }
         }
         std::sort(distances.begin(), distances.end(), [=](std::pair<int, float> &a, std::pair<int, float> &b)
-                  { return a.second < b.second; });
+        { return a.second < b.second; });
         for (size_t i = 0; i < distances.size() && i < maxPoints; i++)
         {
             result.push_back(list[distances[i].first]);
@@ -223,7 +208,9 @@ private:
         return result;
     }
 
-    void collectDistanceToBuckets(KdTreeNode *cursor, const Eigen::Vector3f &p, std::vector<std::pair<KdTreeNode *, float>> *leafDistances) const
+
+
+    void collectDistanceToBuckets(KdTreeNodePair *cursor, const Eigen::Vector3f &p, std::vector<std::pair<KdTreeNodePair *, float>> *leafDistances) const
     {
         if (cursor != nullptr)
         {
@@ -261,7 +248,7 @@ private:
         }
     }
 
-    static void collectInRadiusKnn(std::vector<Eigen::Vector3f> *list, KdTreeNode *cursor, const Eigen::Vector3f &p, float radius, int axis)
+    static void collectInRadiusKnn(std::vector<std::pair<Eigen::Vector3f, float>> *list, KdTreeNodePair *cursor, const Eigen::Vector3f &p, float radius, int axis)
     {
         if (cursor != nullptr)
         {
@@ -269,15 +256,15 @@ private:
             {
                 for (size_t i = 0; i < cursor->bucket.size(); i++)
                 {
-                    float distance = euclideanDistance(p, cursor->bucket[i]);
+                    float distance = euclideanDistance(p, cursor->bucket[i].first);
                     if (distance <= radius)
                     {
                         list->push_back(cursor->bucket[i]);
                     }
                 }
             }
-            KdTreeNode *nonMatchingSide = nullptr;
-            KdTreeNode *matchingSide = nullptr;
+            KdTreeNodePair *nonMatchingSide = nullptr;
+            KdTreeNodePair *matchingSide = nullptr;
             // Left child exists
             if (cursor->median > p[axis])
             {
@@ -306,5 +293,5 @@ private:
         return;
     }
 
-    std::vector<Eigen::Vector3f> m_points;
+    std::vector<std::pair<Eigen::Vector3f, float>> m_points;
 };

@@ -5,6 +5,7 @@
 #include "../../shared/kd_tree_2.cpp"
 #include "../../shared/off_file_parser.cpp"
 #include "../../shared/typealiases.cpp"
+#include "../../shared/wendland.cpp"
 #include "args/args.hxx"
 #include "polyscope/curve_network.h"
 #include "polyscope/point_cloud.h"
@@ -39,11 +40,6 @@ public:
 };
 
 std::unique_ptr<SpatialData> spatial_data;
-
-double wendland(double d)
-{
-    return std::pow((1 - d), 4) * (4 * d + 1);
-}
 
 float weightedLeastSquares(float u, float v, Eigen::Matrix<double, 6, 1> coefficients)
 {
