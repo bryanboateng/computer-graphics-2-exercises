@@ -11,6 +11,10 @@ class SpatialData
         int V;
         int F;
         std::vector<std::set<int>> adjVerts;
+        Eigen::MatrixXd barycentric;
+        void calculateBarycentric();
+        std::vector<std::set<int>> adjFaces;
+        std::set<int> getAdjFaces(int vertex);
     };
 
 #endif

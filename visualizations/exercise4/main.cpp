@@ -35,6 +35,24 @@ std::set<int> SpatialData::getAdj(int vertex)
     
 }
 
+std::set<int> SpatialData::getAdjFaces(int vertex)
+{
+    if(!adjFaces[vertex].empty()){
+        return adjFaces[vertex]; 
+    }
+    else{
+        std::set<int> adjFace;
+        for(int i = 0; i < F; ++i){
+            if(vertex == meshF(i,0) || vertex == meshF(i,1) || vertex == meshF(i,2)){
+                adjFace.insert(i);
+            }
+        }
+        adjFaces[vertex] = adjFace;
+        return adjFace;
+    }
+    
+}
+
 SpatialData::SpatialData(Eigen::MatrixXd meshVer, Eigen::MatrixXi meshFace)
 {
     meshV = meshVer;
@@ -42,6 +60,13 @@ SpatialData::SpatialData(Eigen::MatrixXd meshVer, Eigen::MatrixXi meshFace)
     V = meshV.rows();
     F = meshF.rows();
     adjVerts.resize(V);
+    adjFaces.resize(V);
+    barycentric.resize(V,V);
+}
+
+void SpatialData::calculateBarycentric()
+{
+    return;
 }
 
 
@@ -54,7 +79,6 @@ void GraphLaplace()
 {
     Eigen::MatrixXd newMeshV(spatial_data->V,3);
     int start = spatial_data->meshF(0,0);
-    std::cout << "Testdata: " << start << spatial_data->meshF << std::endl;
     std::vector<bool> visited;
     visited.resize(spatial_data->V,false);
     std::queue<int> queue;
@@ -65,8 +89,6 @@ void GraphLaplace()
         polyscope::registerSurfaceMesh("input mesh", spatial_data->meshV, spatial_data->meshF);
         return;
     }
-
-
 
 
     while(!queue.empty())
