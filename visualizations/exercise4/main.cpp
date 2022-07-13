@@ -4,14 +4,90 @@
 #include <igl/readOBJ.h>
 #include "portable-file-dialogs.h"
 #include "SpatialData.h"
+#include <queue>
+
+bool laplace_smoothing_enabled = false;
+
+std::set<int> SpatialData::getAdj(int vertex)
+{
+    if(!adjVerts[vertex].empty()){
+        return adjVerts[vertex]; 
+    }
+    else{
+        std::set<int> adjVertex;
+        for(int i = 0; i < F; ++i){
+            if(vertex == meshF(i,0)){
+                adjVertex.insert(meshF(i,1));
+                adjVertex.insert(meshF(i,2));
+            }
+            if(vertex == meshF(i,1)){
+                adjVertex.insert(meshF(i,0));
+                adjVertex.insert(meshF(i,2));
+            }
+            if(vertex == meshF(i,2)){
+                adjVertex.insert(meshF(i,0));
+                adjVertex.insert(meshF(i,1));
+            }
+        }
+        adjVerts[vertex] = adjVertex;
+        return adjVertex;
+    }
+    
+}
 
 SpatialData::SpatialData(Eigen::MatrixXd meshVer, Eigen::MatrixXi meshFace)
 {
     meshV = meshVer;
     meshF = meshFace;
+    V = meshV.rows();
+    F = meshF.rows();
+    adjVerts.resize(V);
 }
 
+
+
+
 std::unique_ptr<SpatialData> spatial_data;
+
+
+void GraphLaplace()
+{
+    Eigen::MatrixXd newMeshV(spatial_data->V,3);
+    int start = spatial_data->meshF(0,0);
+    std::cout << "Testdata: " << start << spatial_data->meshF << std::endl;
+    std::vector<bool> visited;
+    visited.resize(spatial_data->V,false);
+    std::queue<int> queue;
+    visited[start] = true;
+    queue.push(start);
+
+    if(!laplace_smoothing_enabled){
+        polyscope::registerSurfaceMesh("input mesh", spatial_data->meshV, spatial_data->meshF);
+        return;
+    }
+
+
+
+
+    while(!queue.empty())
+    {
+        start = queue.front();
+        queue.pop();
+        
+        newMeshV.row(start) = spatial_data->meshV.row(start);
+        for(auto adjecent: spatial_data->getAdj(start)){
+            newMeshV.row(start) += spatial_data->meshV.row(adjecent);
+            if(!visited[adjecent]){
+                visited[adjecent] = true;
+                queue.push(adjecent);
+            }
+        }
+        newMeshV.row(start) /= (spatial_data->getAdj(start).size() + 1);
+    }
+
+    polyscope::registerSurfaceMesh("input mesh", newMeshV, spatial_data->meshF);
+    
+}
 
 void callback()
 {
@@ -27,11 +103,12 @@ void callback()
             {
                 Eigen::MatrixXd meshV;
                 Eigen::MatrixXi meshF;
-                spatial_data = std::make_unique<SpatialData>(meshV, meshF);
 
                 igl::readOBJ(path.string(), meshV, meshF);
+                spatial_data = std::make_unique<SpatialData>(meshV, meshF);
 
                 // Register the mesh with Polyscope
+                laplace_smoothing_enabled = false;
                 polyscope::registerSurfaceMesh("input mesh", meshV, meshF);
             }
             catch (const std::invalid_argument &e)
@@ -41,6 +118,9 @@ void callback()
             }
         }
     }
+    if (ImGui::Checkbox("Laplace Smoothing Enabled", &laplace_smoothing_enabled))
+        GraphLaplace();
+
 }
 
 int main(int argc, char **argv)
