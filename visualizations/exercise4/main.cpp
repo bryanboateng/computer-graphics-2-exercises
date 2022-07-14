@@ -97,14 +97,15 @@ void GraphLaplace()
         queue.pop();
         
         newMeshV.row(start) = spatial_data->meshV.row(start);
+        Eigen::MatrixXd laplaceOperator {{0,0,0}};
         for(auto adjecent: spatial_data->getAdj(start)){
-            newMeshV.row(start) += spatial_data->meshV.row(adjecent);
+            laplaceOperator += (spatial_data->meshV.row(adjecent) - spatial_data->meshV.row(start));
             if(!visited[adjecent]){
                 visited[adjecent] = true;
                 queue.push(adjecent);
             }
         }
-        newMeshV.row(start) /= (spatial_data->getAdj(start).size() + 1);
+        newMeshV.row(start) += (laplaceOperator/(double) spatial_data->getAdj(start).size());
     }
 
     polyscope::registerSurfaceMesh("input mesh", newMeshV, spatial_data->meshF);
