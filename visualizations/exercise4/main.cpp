@@ -66,8 +66,8 @@ SpatialData::SpatialData(Eigen::MatrixXd meshVer, Eigen::MatrixXi meshFace)
     F = meshF.rows();
     adjVerts.resize(V);
     adjFaces.resize(V);
-    barycentric.resize(V,V);
-    cotanLaplacian.resize(V,V);
+    barycentric = Eigen::MatrixXd::Zero(V,V);
+    cotanLaplacian = Eigen::MatrixXd::Zero(V,V);
 }
 
 void SpatialData::calculateBarycentric() //broken
@@ -84,6 +84,7 @@ void SpatialData::calculateBarycentric() //broken
             barycentricArea += (1.0/3.0) * sqrt(s*(s-a)*(s-b)*(s-c));
         }
 
+
         barycentric(i,i) = barycentricArea;
 
     }
@@ -97,38 +98,39 @@ void SpatialData::computeLaplacian()
 {
     for(int i = 0; i < V; ++i)
     {
-        for(int j = 1; j < V; ++j)
+        std::set<int> neighs = getAdj(i);
+        for(auto j: neighs)
         {
             std::set<int> facesi = getAdjFaces(i);
             std::set<int> facesj = getAdjFaces(j);
             std::set<int> jointFaces;
             std::set_intersection(facesi.begin(), facesi.end(), facesj.begin(), facesj.end(), std::inserter(jointFaces, jointFaces.begin()));
-            if(jointFaces.size() > 0){
-                std::vector<int> adjVertices;
-                for(int f : jointFaces){
-                    for(int k = 0; k < 3; ++k){
-                        int vs = meshF(f,k);
-                        if(vs != i && vs != j){
-                            adjVertices.push_back(vs);
-                        }
+            std::vector<int> adjVertices;
+
+            for(int f : jointFaces){
+                for(int k = 0; k < 3; ++k){
+                    int vs = meshF(f,k);
+                    if(vs != i && vs != j){
+                        adjVertices.push_back(vs);
                     }
                 }
-                int v1 = adjVertices[0];
-                int v2 = adjVertices[1];
-                Eigen::Vector3d e1 = meshV.row(i) - meshV.row(v1);
-                Eigen::Vector3d e2 = meshV.row(j) - meshV.row(v1);
-                Eigen::Vector3d e3 = meshV.row(i) - meshV.row(v2);
-                Eigen::Vector3d e4 = meshV.row(j) - meshV.row(v2);
-
-                float cotan_alpha = cotan(e1, e2);
-                float cotan_beta  = cotan(e3, e4);
-                cotanLaplacian(i,j) = 0.5*(cotan_alpha + cotan_beta);
-
-                }
             }
-        }
+            int v1 = adjVertices[0];
+            int v2 = adjVertices[1];
+            Eigen::Vector3d e1 = meshV.row(i) - meshV.row(v1);
+            Eigen::Vector3d e2 = meshV.row(j) - meshV.row(v1);
+            Eigen::Vector3d e3 = meshV.row(i) - meshV.row(v2);
+            Eigen::Vector3d e4 = meshV.row(j) - meshV.row(v2);
 
+            float cotan_alpha = cotan(e1, e2);
+            float cotan_beta  = cotan(e3, e4);
+            cotanLaplacian(i,j) = 0.5*(cotan_alpha + cotan_beta);
+            cotanLaplacian(i,i) -= 0.5*(cotan_alpha + cotan_beta);
+
+        }
     }
+
+}
 
 
 std::unique_ptr<SpatialData> spatial_data;
@@ -156,7 +158,6 @@ void GraphLaplace()
             laplaceOperator(i, adjecent) = 1;
         }
     }
-    std::cout << laplaceOperator << std::endl;
     newMeshV = spatial_data->meshV + (barycentric * laplaceOperator * spatial_data->meshV);
  
 
@@ -167,38 +168,16 @@ void GraphLaplace()
 void GraphLaplaceCotan()
 {
     Eigen::MatrixXd newMeshV(spatial_data->V,3);
-    int start = spatial_data->meshF(0,0);
-    std::vector<bool> visited;
-    visited.resize(spatial_data->V,false);
-    std::queue<int> queue;
-    visited[start] = true;
-    queue.push(start);
 
     if(!laplace_cotan_smoothing_enabled){
         polyscope::registerSurfaceMesh("input mesh", spatial_data->meshV, spatial_data->meshF);
         return;
     }
 
-
-    while(!queue.empty())
-    {
-        start = queue.front();
-        queue.pop();
-        
-        newMeshV.row(start) = spatial_data->meshV.row(start);
-        Eigen::MatrixXd laplaceOperator {{0,0,0}};
-        for(auto adjecent: spatial_data->getAdj(start)){
-            laplaceOperator += spatial_data->cotanLaplacian(start, adjecent) * (spatial_data->meshV.row(adjecent) - spatial_data->meshV.row(start));
-            if(!visited[adjecent]){
-                visited[adjecent] = true;
-                queue.push(adjecent);
-            }
-        }
-        newMeshV.row(start) +=  (laplaceOperator /(double) spatial_data->getAdj(start).size());
-    }
+    newMeshV = spatial_data->meshV + (spatial_data->barycentric * spatial_data->cotanLaplacian * spatial_data->meshV);
 
     polyscope::registerSurfaceMesh("input mesh", newMeshV, spatial_data->meshF);
-    
+    int i = 1;
 }
 
 void callback()
