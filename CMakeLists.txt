@@ -33,6 +33,8 @@ FetchContent_Declare(
         GIT_PROGRESS TRUE)
 FetchContent_MakeAvailable(Eigen)
 
+
+
 # Maybe stop from CMAKEing in the wrong place
 if (CMAKE_BINARY_DIR STREQUAL CMAKE_SOURCE_DIR)
     message(FATAL_ERROR "Source and build directories cannot be the same. Go use the /build directory.")
@@ -88,20 +90,28 @@ else()
   message( FATAL_ERROR "Unrecognized compiler [${CMAKE_CXX_COMPILER_ID}]" )
 endif()
 
+list(PREPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+option(LIBIGL_GLFW "Build target igl::core" ON)
+include(libigl)
+
 # Create an executable
 add_executable(ex1 visualizations/exercise1/main.cpp)
 add_executable(ex2 visualizations/exercise2/main.cpp)
 add_executable(ex3 visualizations/exercise3/main.cpp)
+add_executable(ex4 visualizations/exercise4/main.cpp)
 
 # Add header-only dependencies
 target_include_directories(ex1 PRIVATE "${polyscope_SOURCE_DIR}/deps/args")
 target_include_directories(ex2 PRIVATE "${polyscope_SOURCE_DIR}/deps/args")
 target_include_directories(ex3 PRIVATE "${polyscope_SOURCE_DIR}/deps/args")
+target_include_directories(ex4 PRIVATE "${polyscope_SOURCE_DIR}/deps/args")
 target_include_directories(ex1 PRIVATE "${polyscope_SOURCE_DIR}/deps/json/include")
 target_include_directories(ex2 PRIVATE "${polyscope_SOURCE_DIR}/deps/json/include")
 target_include_directories(ex3 PRIVATE "${polyscope_SOURCE_DIR}/deps/json/include")
+target_include_directories(ex4 PRIVATE "${polyscope_SOURCE_DIR}/deps/json/include")
 
 # Link to dependencies
 target_link_libraries(ex1 polyscope portable_file_dialogs)
 target_link_libraries(ex2 polyscope portable_file_dialogs Eigen3::Eigen)
 target_link_libraries(ex3 polyscope portable_file_dialogs Eigen3::Eigen)
+target_link_libraries(ex4 PUBLIC igl::core polyscope portable_file_dialogs Eigen3::Eigen)
