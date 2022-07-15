@@ -15,6 +15,8 @@ class SpatialData
         void calculateBarycentric();
         std::vector<std::set<int>> adjFaces;
         std::set<int> getAdjFaces(int vertex);
+        Eigen::MatrixXd cotanLaplacian;
+        void computeLaplacian();
     };
 
 #endif

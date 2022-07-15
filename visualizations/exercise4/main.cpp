@@ -5,8 +5,13 @@
 #include "portable-file-dialogs.h"
 #include "SpatialData.h"
 #include <queue>
+#include <algorithm>
+#include <vector>
+#include <iterator>
+#include <math.h> 
 
 bool laplace_smoothing_enabled = false;
+bool laplace_cotan_smoothing_enabled = false;
 
 std::set<int> SpatialData::getAdj(int vertex)
 {
@@ -62,14 +67,68 @@ SpatialData::SpatialData(Eigen::MatrixXd meshVer, Eigen::MatrixXi meshFace)
     adjVerts.resize(V);
     adjFaces.resize(V);
     barycentric.resize(V,V);
+    cotanLaplacian.resize(V,V);
 }
 
-void SpatialData::calculateBarycentric()
+void SpatialData::calculateBarycentric() //broken
 {
-    return;
+    for(int i = 0; i < V; ++i)
+    {
+        std::set<int> faces = getAdjFaces(i);
+        double barycentricArea = 0;
+        for(auto face : faces){
+            double a = (meshV.row(meshF(face,1)) - meshV.row(meshF(face,0))).norm();
+            double b = (meshV.row(meshF(face,2)) - meshV.row(meshF(face,0))).norm();
+            double c = (meshV.row(meshF(face,2)) - meshV.row(meshF(face,1))).norm();
+            double s = (a+b+c)/2.0;
+            barycentricArea += (1.0/3.0) * sqrt(s*(s-a)*(s-b)*(s-c));
+        }
+
+        barycentric(i,i) = barycentricArea;
+
+    }
 }
 
+float cotan(const Eigen::Vector3d &a, const Eigen::Vector3d &b){
+    return a.dot(b) / (a.cross(b)).norm();
+}
 
+void SpatialData::computeLaplacian()
+{
+    for(int i = 0; i < V; ++i)
+    {
+        for(int j = 1; j < V; ++j)
+        {
+            std::set<int> facesi = getAdjFaces(i);
+            std::set<int> facesj = getAdjFaces(j);
+            std::set<int> jointFaces;
+            std::set_intersection(facesi.begin(), facesi.end(), facesj.begin(), facesj.end(), std::inserter(jointFaces, jointFaces.begin()));
+            if(jointFaces.size() > 0){
+                std::vector<int> adjVertices;
+                for(int f : jointFaces){
+                    for(int k = 0; k < 3; ++k){
+                        int vs = meshF(f,k);
+                        if(vs != i && vs != j){
+                            adjVertices.push_back(vs);
+                        }
+                    }
+                }
+                int v1 = adjVertices[0];
+                int v2 = adjVertices[1];
+                Eigen::Vector3d e1 = meshV.row(i) - meshV.row(v1);
+                Eigen::Vector3d e2 = meshV.row(j) - meshV.row(v1);
+                Eigen::Vector3d e3 = meshV.row(i) - meshV.row(v2);
+                Eigen::Vector3d e4 = meshV.row(j) - meshV.row(v2);
+
+                float cotan_alpha = cotan(e1, e2);
+                float cotan_beta  = cotan(e3, e4);
+                cotanLaplacian(i,j) = 0.5*(cotan_alpha + cotan_beta);
+
+                }
+            }
+        }
+
+    }
 
 
 std::unique_ptr<SpatialData> spatial_data;
@@ -112,6 +171,43 @@ void GraphLaplace()
     
 }
 
+void GraphLaplaceCotan()
+{
+    Eigen::MatrixXd newMeshV(spatial_data->V,3);
+    int start = spatial_data->meshF(0,0);
+    std::vector<bool> visited;
+    visited.resize(spatial_data->V,false);
+    std::queue<int> queue;
+    visited[start] = true;
+    queue.push(start);
+
+    if(!laplace_cotan_smoothing_enabled){
+        polyscope::registerSurfaceMesh("input mesh", spatial_data->meshV, spatial_data->meshF);
+        return;
+    }
+
+
+    while(!queue.empty())
+    {
+        start = queue.front();
+        queue.pop();
+        
+        newMeshV.row(start) = spatial_data->meshV.row(start);
+        Eigen::MatrixXd laplaceOperator {{0,0,0}};
+        for(auto adjecent: spatial_data->getAdj(start)){
+            laplaceOperator += spatial_data->cotanLaplacian(start, adjecent) * (spatial_data->meshV.row(adjecent) - spatial_data->meshV.row(start));
+            if(!visited[adjecent]){
+                visited[adjecent] = true;
+                queue.push(adjecent);
+            }
+        }
+        newMeshV.row(start) +=  (laplaceOperator /(double) spatial_data->getAdj(start).size());
+    }
+
+    polyscope::registerSurfaceMesh("input mesh", newMeshV, spatial_data->meshF);
+    
+}
+
 void callback()
 {
     if (ImGui::Button("Load Points"))
@@ -143,6 +239,15 @@ void callback()
     }
     if (ImGui::Checkbox("Laplace Smoothing Enabled", &laplace_smoothing_enabled))
         GraphLaplace();
+    if (ImGui::Checkbox("Cotan Laplace Smoothing Enabled", &laplace_cotan_smoothing_enabled))
+        GraphLaplaceCotan();
+
+    if (ImGui::Button("Calculate Barycentric")){
+        spatial_data->calculateBarycentric();
+    }
+    if (ImGui::Button("Compute Cotan Laplacian")){
+        spatial_data->computeLaplacian();
+    }
 
 }
 
