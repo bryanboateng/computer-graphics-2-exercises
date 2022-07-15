@@ -137,12 +137,8 @@ std::unique_ptr<SpatialData> spatial_data;
 void GraphLaplace()
 {
     Eigen::MatrixXd newMeshV(spatial_data->V,3);
-    int start = spatial_data->meshF(0,0);
-    std::vector<bool> visited;
-    visited.resize(spatial_data->V,false);
-    std::queue<int> queue;
-    visited[start] = true;
-    queue.push(start);
+    Eigen::MatrixXd laplaceOperator = Eigen::MatrixXd::Zero(spatial_data->V,spatial_data->V);
+    Eigen::MatrixXd barycentric = Eigen::MatrixXd::Zero(spatial_data->V,spatial_data->V);
 
     if(!laplace_smoothing_enabled){
         polyscope::registerSurfaceMesh("input mesh", spatial_data->meshV, spatial_data->meshF);
@@ -150,22 +146,19 @@ void GraphLaplace()
     }
 
 
-    while(!queue.empty())
+    for(int i = 0; i < spatial_data->V; ++i)
     {
-        start = queue.front();
-        queue.pop();
-        
-        newMeshV.row(start) = spatial_data->meshV.row(start);
-        Eigen::MatrixXd laplaceOperator {{0,0,0}};
-        for(auto adjecent: spatial_data->getAdj(start)){
-            laplaceOperator += (spatial_data->meshV.row(adjecent) - spatial_data->meshV.row(start));
-            if(!visited[adjecent]){
-                visited[adjecent] = true;
-                queue.push(adjecent);
-            }
+        std::set<int> neighs = spatial_data->getAdj(i);
+        barycentric(i,i) = 1.0/(double) neighs.size();
+        laplaceOperator(i,i) = -1 * (double)neighs.size();
+        for(auto adjecent: neighs)
+        {
+            laplaceOperator(i, adjecent) = 1;
         }
-        newMeshV.row(start) += (laplaceOperator/(double) spatial_data->getAdj(start).size());
     }
+    std::cout << laplaceOperator << std::endl;
+    newMeshV = spatial_data->meshV + (barycentric * laplaceOperator * spatial_data->meshV);
+ 
 
     polyscope::registerSurfaceMesh("input mesh", newMeshV, spatial_data->meshF);
     
